@@ -1,10 +1,9 @@
-# Large data inputs (replaced by features_v2.gpkg)
+# Large data inputs (replaced by floods.gpkg)
 Data/Chirps/
 Data/rasters_SRTMGL3/
-Data/FL20240426KEN_gdb/
+Data/FL20240426KEN.gdb/
 Data/GTFS_FEED_2019/
 Data/kenya_wards/
-Data/features_v1.gpkg
 Data/slope_temp.tif
 
 # Exploratory notebooks
