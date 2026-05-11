@@ -1,0 +1,72 @@
+{
+  "feature_cols": [
+    "mean_elevation",
+    "min_elevation",
+    "slope_mean_deg",
+    "twi_proxy",
+    "elev_range",
+    "terrain_roughness",
+    "is_low_lying",
+    "precip_mm",
+    "rain_cum_1d",
+    "rain_cum_2d",
+    "rain_cum_3d",
+    "rain_cum_6d",
+    "rain_mean_3d",
+    "rain_mean_7d",
+    "rain_mean_14d",
+    "rain_mean_30d",
+    "rain_std_3d",
+    "rain_std_7d",
+    "rain_max_3d",
+    "rain_max_7d",
+    "rain_max_14d",
+    "soil_moisture",
+    "is_heavy_rain",
+    "is_extreme_rain",
+    "doy_sin",
+    "doy_cos",
+    "mon_sin",
+    "mon_cos",
+    "is_long_rain",
+    "is_short_rain",
+    "is_rainy",
+    "month",
+    "n_routes",
+    "n_stops",
+    "route_density",
+    "stop_density",
+    "is_terminal",
+    "route_vuln",
+    "route_vuln_n",
+    "exp_disruption",
+    "rain_low_elev",
+    "rain_route_risk",
+    "moisture_rain",
+    "twi_rain",
+    "compound_risk",
+    "ward_hist_rate"
+  ],
+  "n_features": 46,
+  "optimal_threshold": 0.701546603697044,
+  "production_model": "ensemble_xgb60_rf40",
+  "metrics": {
+    "pr_auc": 1.0,
+    "pr_auc_ci": [
+      1.0,
+      1.0
+    ],
+    "recall": 1.0,
+    "recall_ci": [
+      1.0,
+      1.0
+    ],
+    "f1": 1.0,
+    "f1_ci": [
+      1.0,
+      1.0
+    ],
+    "sev_f1": 1.0,
+    "delay_mae": 0.000812
+  }
+}
