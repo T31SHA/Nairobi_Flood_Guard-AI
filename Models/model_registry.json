@@ -54,7 +54,7 @@
     "2023-11-20"
   ],
   "test_date": "2024-04-26",
-  "optimal_threshold": 0.9342412761764545,
+  "optimal_threshold": 0.9342412761764544,
   "production_model": "ensemble_xgb60_rf40",
   "metrics": {
     "pr_auc": 0.852206,

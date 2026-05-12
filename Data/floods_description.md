@@ -1,4 +1,4 @@
-This document describes the columns in the [floods](./Data/floods.gpkg) dataset enginnered using CHIRPS and UNOSAT data.
+This document describes the columns in the [floods](./floods.gpkg) dataset enginnered using CHIRPS and UNOSAT data.
 
 | **Column**            | **Type** | **Description**                                                                                     |
 | --------------------- | -------- | --------------------------------------------------------------------------------------------------- |
