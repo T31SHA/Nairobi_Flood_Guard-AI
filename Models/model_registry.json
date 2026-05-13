@@ -3,6 +3,7 @@
   "feature_cols": [
     "mean_elevation",
     "min_elevation",
+    "max_elevation",
     "slope_mean_deg",
     "twi_proxy",
     "elev_range",
@@ -48,33 +49,33 @@
     "compound_risk",
     "ward_hist_rate"
   ],
-  "n_features": 46,
+  "n_features": 47,
   "train_dates": [
     "2023-04-15",
     "2023-11-20"
   ],
   "test_date": "2024-04-26",
-  "optimal_threshold": 0.9342412761764545,
+  "optimal_threshold": 0.03787637716187194,
   "production_model": "ensemble_xgb60_rf40",
   "metrics": {
-    "pr_auc": 0.852206,
+    "pr_auc": 0.635562,
     "pr_auc_ci": [
-      0.556357,
-      1.0
+      0.303888,
+      0.894659
     ],
-    "recall": 0.75,
+    "recall": 0.7,
     "recall_ci": [
-      0.4,
+      0.363636,
       1.0
     ],
-    "f1": 0.857143,
+    "f1": 0.341463,
     "f1_ci": [
-      0.571429,
-      1.0
+      0.129032,
+      0.521739
     ],
-    "roc_auc": 0.897727,
-    "brier": 0.044759,
+    "roc_auc": 0.714667,
+    "brier": 0.108518,
     "sev_f1": 1.0,
-    "delay_mae": 0.003817
+    "delay_mae": 0.000874
   }
 }
