@@ -98,7 +98,7 @@ A polygon shapefile of Kenya's 1450 administrative wards including ward name, su
 
 **Source:** Regional Centre for Mapping of Resources for Development (RGMRD)
 
-## e) GTFS Feed 2019 - Nairobi Matatu Network
+### e) GTFS Feed 2019 - Nairobi Matatu Network
 
 A General Transit Feed Specification (GTFS) dataset describing Nairobi's matatu public transport network as of 2019, including 136 routes, 4,284 stops, and 36,483 route shape points. This dataset underpins the route optimization component of the project.
 
@@ -113,3 +113,9 @@ All datasets were processed and merged into a single GeoPackage file (`floods.gp
 After loading and examining the dataset (checking for null values and duplicates), the following visualizations were developed:
 
 #### i) Class Imbalance visualization
+
+<img src='./Images/class_distribution.png' />
+
+The not flooded class accounts for ~79% of the data in the dataset. This confirms that the dataset suffers from class imbalance which was addressed.
+
+###
