@@ -338,7 +338,27 @@ For more information visit the:
 
 ### _Instructions on how to run the streamlit app_
 
-Ensure you have streamlit installed and then in your terminal run:
+Ensure you have streamlit installed. To check if you do, you can run this in your terminal:
+
+```bash
+streamlit --version
+```
+
+If you do not have it installed install it using either:
+
+- pip:
+
+  ```bash
+  pip install streamlit
+  ```
+
+- or conda:
+
+  ```bash
+  conda install -c conda-forge streamlit
+  ```
+
+and then in your terminal run:
 
 ```bash
 streamlit run app.py
