@@ -14,7 +14,7 @@ NAIROBI FLOOD GUARD
 1. OVERVIEW
 </h2>
 
-Nairobi Flood Guard is a data science project that addresses the growing threat of flooding across Kenya, motivated by the devastating April 2024 floods abd the recent 2026 floods
+Nairobi Flood Guard is a data science project that addresses the growing threat of flooding across Kenya, motivated by the devastating April 2024 floods and the recent 2026 floods
 
 It has two components:
 
