@@ -620,7 +620,7 @@ elif page == "Route Optimization":
             unsafe_allow_html=True,
         )
         if TRADEOFF_PNG.exists():
-            st.image(str(TRADEOFF_PNG), use_column_width=True)
+            st.image(str(TRADEOFF_PNG), width="content")
         else:
             st.info(
                 "Tradeoff chart not found. Run route_optimization.ipynb to generate it."
