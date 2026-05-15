@@ -90,7 +90,7 @@ The Climate Hazards Group InfraRed Precipitation with Station Data (CHIRPS) prov
 
 ### c) UNOSAT Flood Extent - FL20240426KEN
 
-A satellite-derived flood extent geodatabase produced by UNOSAT following the April 2024 Kenya floods. The Kenya-wide maximum flood water extent polygon was used to generate binary flood labels for each ward — flooded (1) or not flooded (0).
+A satellite-derived flood extent geodatabase produced by UNOSAT following the April 2024 Kenya floods. The Kenya-wide maximum flood water extent polygon was used to generate binary flood labels for each ward - flooded (1) or not flooded (0).
 
 **Source:** UNOSAT / UNITAR
 
@@ -138,11 +138,11 @@ All rainfall features correlate weakly with flooding, with `rain_max_daily_mm` s
 
 <img src='./Images/top_10_flooded_counties.png' />
 
-Again, some of the top 10 counties are ones that do not receive a lot of rainfall e.g. Turkana and Garissa. They experience flooding due to their terrain which, during those rare seasons when it does rain, does not allow the water to drain effectively.
+Again, some of the top 10 counties are ones that do not receive a lot of rainfall e.g. Turkana and Garissa. They experience flooding due to their terrain which does not allow the water to drain effectively during those rare seasons when it does rain.
 
 #### _Key Takeaway_
 
-The dataset reveals that in Kenya, flooding is primarily a terrain-driven phenomenon at the ward scale. Low-lying wards flood not necessarily because they receive more rain, but because water from surrounding higher ground drains into them. This has implications for the model - terrain features will dominate predictions, and rainfall adds marginal value at this spatial scale.
+The dataset reveals that in Kenya, flooding is primarily a terrain-driven phenomenon at the ward scale. Low-lying wards flood not necessarily because they receive more rain, but because water from surrounding higher ground drains into them. Terrain features will dominate predictions, and rainfall adds marginal value at this spatial scale.
 
 ---
 
@@ -168,25 +168,25 @@ The following results were obtained:
 
 <img src='./Images/logistic_confusion_matrix.png' />
 
-The baseline logistic regression model did not show strong recall on the flooded class, with more than half of its predicted positives being false positives. It shows strong overall recall by keeping false negatives low. This sets a solid performance floor for the more complex models to beat.
+The baseline logistic regression model did not show strong recall on the flooded class, with more than half of its predicted positives being false positives. It showed strong overall recall by keeping false negatives low. This set a solid performance floor for the more complex models to beat.
 
 ### b) Random Forest Model
 
 <img src='./Images/random_forest_confusion_matrix.png' />
 
-The Random Forest improves on the baseline across all metrics. Its ensemble nature - aggregating predictions from many decision trees - allows it to capture non-linear relationships between terrain features and flood risk that the logistic regression cannot.
+The Random Forest improved on the baseline across all metrics. Its ensemble nature - aggregating predictions from many decision trees - allowed it to capture non-linear relationships between terrain features and flood risk that the logistic regression cannot.
 
 ### c) XGBoost Classifier Model
 
 <img src='./Images/xgboost_confusion_matrix.png' />
 
-The XGBoost model performs better relative to the Random Forest on this dataset in terms of recall. It also has a high accuracy, precision and f1-score. This is likely attributable to its ensemble nature which, like the Random Forest, allows it to capture non-linear relationships between terrain features and flood risk
+The XGBoost model performed better relative to the Random Forest on this dataset in terms of recall. It also had a high accuracy, precision and f1-score. This is likely attributable to its ensemble nature which, like the Random Forest, allowed it to capture non-linear relationships between terrain features and flood risk
 
 ### d) Neural Network
 
 <img src='./Images/neural_network_confusion_matrix.png' />
 
-The Neural Network significantly underperforms relative to the Random Forest and XGBoost model. Neural networks typically require large amounts of training data to generalise well - with only 1,450 ward-level samples, the model has limited capacity to learn complex spatial patterns compared to tree-based ensembles.
+The Neural Network significantly underperformed relative to the Random Forest and XGBoost model. Neural networks typically require large amounts of training data to generalise well - with only 1,450 ward-level samples, the model had limited capacity to learn complex spatial patterns compared to tree-based ensembles.
 
 ### _Final Evaluation_
 
@@ -199,9 +199,9 @@ Comparing the metrics of all the models:
 | Random_Forest  | 0.881322 | 0.822989 |  0.742775 | 0.792306 | 0.760649 |     435 |
 | XGBoost        | 0.896913 | 0.813793 |  0.742293 | 0.818291 | 0.762601 |     435 |
 
-The **XGBoost model** achieves some of the highest metrics among all four models
+The **XGBoost model** achieved some of the highest metrics among all four models
 
-Given that we are looking for the model with the best recall, and, combined with the fact that it has the best AUC and F1-Score, the **XGBoost model** is selected as the final model for flood susceptibility prediction.
+Given that we were looking for the model with the best recall, and, combined with the fact that it had the best AUC and F1-Score, the **XGBoost model** was selected as the final model for flood susceptibility prediction.
 
 The models' ROC curves reinforce this decision with XGBoost achieving the highest AUC (0.9):
 
@@ -227,7 +227,7 @@ The system works in four stages:
 
 3. **GTFS-RT feed** — rerouting decisions are packaged as a production-ready GTFS-RT protobuf feed with `TripUpdate` messages for each affected trip, consumable by transit apps such as Google Maps and Transit App
 
-4. **Folium map** — an interactive map visualises ward flood risk, affected stops, and original vs. alternative route paths side by side
+4. **Folium map** — an interactive map that visualises ward flood risk, affected stops, and original vs. alternative route paths side by side
 
 | route_id    | origin        | destination        | original_flood_prob | alternative_flood_prob | risk_reduction | original_time_s | alternative_time_s | extra_time_min |
 | :---------- | :------------ | :----------------- | ------------------: | ---------------------: | -------------: | --------------: | -----------------: | -------------: |
@@ -255,13 +255,13 @@ Routes with high risk reduction and low extra travel time are the most actionabl
 
 The scatter plot (left) shows the tradeoff between flood risk reduction and extra travel time for each rerouted route. Routes in the upper-left quadrant are ideal — they achieve large risk reductions with little added journey time. Routes in the lower-right represent cases where the algorithm found an alternative path, but the safety gain is marginal relative to the detour cost.
 
-The histogram (right) shows the distribution of extra travel time across all rerouted routes. The majority of alternatives add a significant amount of time, suggesting that for most affected matatu routes, a safer path exists that is significantly longer than the original. These options, while not convenient, offer a lot more safety. The mean extra travel time is marked by the red dashed line.
+The histogram (right) shows the distribution of extra travel time across all rerouted routes. The majority of alternatives add a significant amount of time, suggesting that for most affected matatu routes, there does not exist a safer path that is not significantly longer than the original. These options, while not convenient, offer a lot more safety. The mean extra travel time is marked by the red dashed line.
 
-> To view the folium map run the streamlit website in `app.py` by typing `streamlit run app.py` in your terminal. More information on this is provided below in the section `For More Information`
+> To view the folium map run the streamlit website in `app.py` by typing `streamlit run app.py` in your terminal. More information on this is provided in the section `For More Information` below
 
 ### Conclusion
 
-The route optimization system demonstrates that for the majority of Nairobi's flood-affected matatu routes, safer alternatives exist. However, most of them add significant travel time. The GTFS-RT feed produced by this system is immediately compatible with existing transit infrastructure, requiring no changes to operator hardware or passenger apps to deploy. In a production setting, the XGBoost model would be retrained periodically as new flood event data becomes available, and the feed would be refreshed in near-real-time as rainfall and flood conditions evolve.
+The route optimization system demonstrates that for the majority of Nairobi's flood-affected matatu routes, safer alternatives exist. However, most of them add significant travel time. The GTFS-RT feed produced by this system is immediately compatible with existing transit infrastructure, requiring no changes to operator hardware or passenger apps to deploy.
 
 ---
 
@@ -273,11 +273,11 @@ The route optimization system demonstrates that for the majority of Nairobi's fl
 
 Nairobi Flood Guard set out to address two problems: predicting which areas of Kenya are most susceptible to flooding, and recommending safer matatu routes when flood events occur. Both objectives were successfully achieved.
 
-The data understanding phase revealed an important and counterintuitive insight — flooding in Kenya at ward scale is primarily a **terrain-driven phenomenon**, not a rainfall-driven one. Low-lying wards flood not because they receive more rain, but because water from surrounding higher ground drains into them. This meant that elevation features dominated model performance while rainfall features contributed marginally, a finding that shaped feature engineering decisions across all four models.
+The data understanding phase revealed an important and counterintuitive insight: flooding in Kenya at ward scale is primarily a **terrain-driven phenomenon**, not a rainfall-driven one. Low-lying wards flood not because they receive more rain, but because water from surrounding higher ground drains into them. This meant that elevation features dominated model performance while rainfall features contributed marginally, a finding that shaped feature engineering decisions across all four models.
 
-Among the four model families evaluated — Logistic Regression, Random Forest, XGBoost, and Neural Network — the **XGBoost model emerged as the best overall performer**, achieving the highest AUC (0.90) and recall among all models. Its ability to handle non-linear relationships, class imbalance, and noisy features made it well-suited to this dataset. The Neural Network underperformed relative to the tree-based models, consistent with its need for larger datasets than the 1,450 ward-level samples available here.
+Among the four model families evaluated - Logistic Regression, Random Forest, XGBoost, and Neural Network - the **XGBoost model emerged as the best overall performer**, achieving the highest AUC (0.90) and recall among all models. Its ability to handle non-linear relationships, class imbalance, and noisy features made it well-suited to this dataset. The Neural Network underperformed relative to the tree-based models, consistent with its need for larger datasets than the 1,450 ward-level samples available here.
 
-The route optimization system translated XGBoost's flood probability predictions into actionable rerouting recommendations for Nairobi's matatu network. By assigning prohibitively high costs to flood-affected road segments and running weighted Dijkstra across the real OpenStreetMap road network, the system identified safer alternative paths for affected routes — packaged in a production-ready GTFS-RT feed compatible with existing transit infrastructure.
+The route optimization system translated XGBoost's flood probability predictions into actionable rerouting recommendations for Nairobi's matatu network. By assigning prohibitively high costs to flood-affected road segments and running weighted Dijkstra across the real OpenStreetMap road network, the system identified safer alternative paths for affected routes - packaged in a production-ready GTFS-RT feed compatible with existing transit infrastructure.
 
 ### Recommendations
 
@@ -297,9 +297,9 @@ The system flags wards as high-risk at a default probability threshold of 0.45, 
 
 `ALPHA` in the route optimization notebook controls how aggressively flooded roads are penalized. The current setting of 1,000,000 effectively blocks all flood-affected roads. For scenarios where partial flooding is expected and roads remain passable, lowering alpha to 5 - 10 introduces a preference for safer roads without outright blocking them.
 
-#### 5. Onboarding New Team Members
+#### 5. Familiarizing Yourself With the Project
 
-New contributors should begin by reading `README.md`, then run `notebook.ipynb` for a full project overview. Feature engineering logic is centralised in `Utils/feature_engineering.py` - any changes to features must be reflected there to ensure consistency across the prediction and route optimization pipelines. Individual model notebooks are in `Models/Notebooks/` and can be run independently for retraining or further tuning.
+You should begin by reading and running `notebook.ipynb` for a full project overview. Feature engineering logic is centralised in `Utils/feature_engineering.py` - any changes to features must be reflected there to ensure consistency across the prediction and route optimization pipelines. Individual model notebooks are in `Models/Notebooks/` and can be run independently for retraining or further tuning.
 
 ---
 
