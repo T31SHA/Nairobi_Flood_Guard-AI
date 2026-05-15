@@ -206,3 +206,103 @@ Given that we are looking for the model with the best recall, and, combined with
 The models' ROC curves reinforce this decision with XGBoost achieving the highest AUC (0.9):
 
 <img src='./Images/roc_curves.png' />
+
+---
+
+<h2 align='center'>
+5. ROUTE OPTIMIZATION
+</h2>
+
+<h2 align='center'>
+4. ROUTE OPTIMIZATION
+</h2>
+
+### Overview
+
+With the XGBoost model identified as the best performer, its flood probability predictions were used to power a matatu route optimization system for Nairobi. The full implementation is in `Route_Optimization/route_optimization.ipynb` ([here](./Route_Optimization/route_optimization.ipynb)). This section summarises the methodology, key outputs, and findings.
+
+The system works in four stages:
+
+1. **Flood probabilities given to road edges** - each road segment in Nairobi's OpenStreetMap network is assigned the flood probability of the ward it passes through via a spatial join
+
+2. **Flood-weighted Dijkstra** - each edge is penalized using the formula `cost = travel_time × (1 + α × flood_probability)`, where $\alpha$ controls the strength of the penalty. Setting $\alpha$ to 1,000,000 acts as a practical infinity - any road with non-zero flood probability becomes impassable for routing purposes. The algorithm then finds the path that minimises total cost, effectively blocking flooded roads from consideration entirely - a route is only returned if a completely flood-free path exists between the terminal stops.
+
+   This is done so as to avoid suggesting a flooded path even as an alternative.
+
+3. **GTFS-RT feed** — rerouting decisions are packaged as a production-ready GTFS-RT protobuf feed with `TripUpdate` messages for each affected trip, consumable by transit apps such as Google Maps and Transit App
+
+4. **Folium map** — an interactive map visualises ward flood risk, affected stops, and original vs. alternative route paths side by side
+
+| route_id    | origin        | destination        | original_flood_prob | alternative_flood_prob | risk_reduction | original_time_s | alternative_time_s | extra_time_min |
+| :---------- | :------------ | :----------------- | ------------------: | ---------------------: | -------------: | --------------: | -----------------: | -------------: |
+| 20104003910 | Super Highway | Transami           |               0.067 |                  0.003 |          0.064 |         1469.63 |             7772.5 |            105 |
+| 30603373812 | Dune          | Rounda             |               0.306 |                  0.022 |          0.284 |         868.318 |            8671.07 |            130 |
+| 40705383911 | Quickmart     | Muthurwa           |               0.342 |                  0.028 |          0.313 |         1479.57 |            8216.55 |          112.3 |
+| 50700003311 | Utawala       | Kencom/Ambassadeur |               0.315 |                  0.009 |          0.306 |         1494.09 |            7898.88 |          106.7 |
+| 50700014501 | Ruiru         | Ruai Bypass        |               0.122 |                  0.122 |              0 |         1108.48 |            1108.48 |              0 |
+| 50700033H01 | By Pass       | Cabanas            |               0.317 |                  0.009 |          0.308 |         1083.11 |             8475.9 |          123.2 |
+| 50703033J01 | Githunguri    | Cabanas            |               0.378 |                  0.035 |          0.343 |         881.788 |            1704.78 |           13.7 |
+
+The table above shows the top 10 most improved matatu routes ranked by flood risk reduction. Each row represents one route and shows:
+
+- **Original flood risk** - the average flood probability across road segments on the standard route
+
+- **Alternative flood risk** - the same metric for the recommended alternative path
+
+- **Risk reduction** - the absolute improvement; higher is better
+
+- **Extra travel time** - the additional journey time the alternative route adds in minutes, representing the safety-convenience tradeoff
+
+Routes with high risk reduction and low extra travel time are the most actionable recommendations - they offer meaningful safety improvements at minimal inconvenience to operators and commuters.
+
+<img src='./Route_Optimization/Reports/rerouting_tradeoff.png' />
+
+The scatter plot (left) shows the tradeoff between flood risk reduction and extra travel time for each rerouted route. Routes in the upper-left quadrant are ideal — they achieve large risk reductions with little added journey time. Routes in the lower-right represent cases where the algorithm found an alternative path, but the safety gain is marginal relative to the detour cost.
+
+The histogram (right) shows the distribution of extra travel time across all rerouted routes. The majority of alternatives add a significant amount of time, suggesting that for most affected matatu routes, a safer path exists that is significantly longer than the original. These options, while not convenient, offer a lot more safety. The mean extra travel time is marked by the red dashed line.
+
+> To view the folium map run the streamlit website in `app.py` by typing `streamlit run app.py` in your terminal. More information on this is provided below in the section `For More Information`
+
+### Conclusion
+
+The route optimization system demonstrates that for the majority of Nairobi's flood-affected matatu routes, safer alternatives exist. However, most of them add significant travel time. The GTFS-RT feed produced by this system is immediately compatible with existing transit infrastructure, requiring no changes to operator hardware or passenger apps to deploy. In a production setting, the XGBoost model would be retrained periodically as new flood event data becomes available, and the feed would be refreshed in near-real-time as rainfall and flood conditions evolve.
+
+---
+
+<h2 align='center'>
+5. CONCLUSION AND RECOMMENDATION
+</h2>
+
+### Conclusion
+
+Nairobi Flood Guard set out to address two problems: predicting which areas of Kenya are most susceptible to flooding, and recommending safer matatu routes when flood events occur. Both objectives were successfully achieved.
+
+The data understanding phase revealed an important and counterintuitive insight — flooding in Kenya at ward scale is primarily a **terrain-driven phenomenon**, not a rainfall-driven one. Low-lying wards flood not because they receive more rain, but because water from surrounding higher ground drains into them. This meant that elevation features dominated model performance while rainfall features contributed marginally, a finding that shaped feature engineering decisions across all four models.
+
+Among the four model families evaluated — Logistic Regression, Random Forest, XGBoost, and Neural Network — the **XGBoost model emerged as the best overall performer**, achieving the highest AUC (0.90) and recall among all models. Its ability to handle non-linear relationships, class imbalance, and noisy features made it well-suited to this dataset. The Neural Network underperformed relative to the tree-based models, consistent with its need for larger datasets than the 1,450 ward-level samples available here.
+
+The route optimization system translated XGBoost's flood probability predictions into actionable rerouting recommendations for Nairobi's matatu network. By assigning prohibitively high costs to flood-affected road segments and running weighted Dijkstra across the real OpenStreetMap road network, the system identified safer alternative paths for affected routes — packaged in a production-ready GTFS-RT feed compatible with existing transit infrastructure.
+
+### Recommendations
+
+#### 1. Running the Flood Prediction Model
+
+To generate flood risk predictions, load `Models/best_xgboost_model.pkl` and, after ensuring that the feature names are in the right order, call `predict_proba()` on the model. The full prediction workflow is documented in `Notebooks/xgboost_notebook.ipynb`. Ensure the input data contains all required columns from `Data/floods.gpkg` before engineering features.
+
+#### 2. Running the Route Optimization System
+
+The route optimization notebook at `Route_Optimization/route_optimization.ipynb` is self-contained and can be run independently. It requires `Data/floods.gpkg`, `Data/nairobi_road_network.graphml`, `Data/GTFS_FEED_2019/`, and `Models/best_xgboost_model.pkl` to be present. The notebook loads the saved road network from disk — there is no need to re-download it from OpenStreetMap. Outputs are saved to `Route_Optimization/Reports/`.
+
+#### 3. Tuning the Flood Risk Threshold
+
+The system flags wards as high-risk at a default probability threshold of 0.45, set via the `FLOOD_THRESHOLD` constant in the route optimization notebook. This can be lowered to increase sensitivity (flag more wards as at-risk) or raised to reduce false alarms, depending on the severity of the flood event being modelled. During extreme events, a lower threshold is recommended.
+
+#### 4. Adjusting the Alpha Parameter
+
+`ALPHA` in the route optimization notebook controls how aggressively flooded roads are penalized. The current setting of 1,000,000 effectively blocks all flood-affected roads. For scenarios where partial flooding is expected and roads remain passable, lowering alpha to 5 - 10 introduces a preference for safer roads without outright blocking them.
+
+#### 5. Onboarding New Team Members
+
+New contributors should begin by reading `README.md`, then run `notebook.ipynb` for a full project overview. Feature engineering logic is centralised in `Utils/feature_engineering.py` - any changes to features must be reflected there to ensure consistency across the prediction and route optimization pipelines. Individual model notebooks are in `Models/Notebooks/` and can be run independently for retraining or further tuning.
+
+---
