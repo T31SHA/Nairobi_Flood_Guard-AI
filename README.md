@@ -340,7 +340,7 @@ Ensure you have streamlit installed. To check if you do, you can run this in you
 streamlit --version
 ```
 
-If you do not have it installed install it using either:
+If you do not have it installed, install it using either:
 
 - pip:
 
