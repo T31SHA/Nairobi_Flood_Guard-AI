@@ -225,9 +225,9 @@ The system works in four stages:
 
    This is done so as to avoid suggesting a flooded path even as an alternative.
 
-3. **GTFS-RT feed** — rerouting decisions are packaged as a production-ready GTFS-RT protobuf feed with `TripUpdate` messages for each affected trip, consumable by transit apps such as Google Maps and Transit App
+3. **GTFS-RT feed** — rerouting decisions are packaged as a production-ready GTFS-RT protobuf feed with `TripUpdate` messages for each affected trip, consumable by transit apps such as Google Maps and Transit App.
 
-4. **Folium map** — an interactive map that visualises ward flood risk, affected stops, and original vs. alternative route paths side by side
+4. **Folium map** — an interactive map that visualises ward flood risk, affected stops, and original vs. alternative route paths side by side.
 
 | route_id    | origin        | destination        | original_flood_prob | alternative_flood_prob | risk_reduction | original_time_s | alternative_time_s | extra_time_min |
 | :---------- | :------------ | :----------------- | ------------------: | ---------------------: | -------------: | --------------: | -----------------: | -------------: |
