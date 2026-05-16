@@ -4,6 +4,7 @@ Run with: streamlit run app.py
 """
 
 import warnings
+import json
 import pickle
 from pathlib import Path
 
@@ -29,6 +30,7 @@ FLOODS_GPKG = DATA / "floods.gpkg"
 XGB_MODEL = MODELS / "best_xgboost_model.pkl"
 REROUTING_CSV = REPORTS / "rerouting_summary.csv"
 TRADEOFF_PNG = REPORTS / "rerouting_tradeoff.png"
+ROUTE_GEOMETRIES = REPORTS / "route_geometries.json"
 
 NAIROBI_LAT, NAIROBI_LON = -1.286389, 36.817223
 
@@ -205,6 +207,14 @@ def load_gtfs():
     stops = pd.read_csv(GTFS_DIR / "stops.txt")
     stop_times = pd.read_csv(GTFS_DIR / "stop_times.txt")
     return routes, trips, shapes, stops, stop_times
+
+
+@st.cache_data
+def load_route_geometries():
+    if not ROUTE_GEOMETRIES.exists():
+        return {}
+    with open(ROUTE_GEOMETRIES, "r") as f:
+        return json.load(f)
 
 
 @st.cache_data
@@ -593,6 +603,7 @@ elif page == "Route Optimization":
 
     rerouting_df = load_rerouting()
     routes, trips, shapes, stops, stop_times = load_gtfs()
+    route_geoms = load_route_geometries()
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
@@ -830,13 +841,18 @@ elif page == "Route Optimization":
                 route_map.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
 
         else:  # Alternative Route
+            alt_coords = route_geoms.get(str(route_id), {}).get("alternative", [])
+
             st.caption(
-                "🟠 Alternative route avoids all 🔴 affected stops · "
-                "risk reduced by {:.3f} · extra time +{:.1f} min".format(
+                "🟠 Alternative route (Dijkstra, flood-weighted) · "
+                "🔵 Original route (faded reference) · "
+                "🔴 Affected stops skipped · "
+                "risk reduced by {:.3f} · +{:.1f} min".format(
                     route_row["risk_reduction"], route_row["extra_time_min"]
                 )
             )
-            # Draw original in faded blue for reference
+
+            # Original route faded for reference
             if route_coords:
                 folium.PolyLine(
                     route_coords,
@@ -847,7 +863,22 @@ elif page == "Route Optimization":
                     dash_array="6",
                 ).add_to(route_map)
 
-            # Draw stops — red (affected, to be avoided) or grey (safe)
+            # Alternative route in orange
+            if alt_coords:
+                folium.PolyLine(
+                    alt_coords,
+                    color="#EF9F27",
+                    weight=4,
+                    opacity=0.9,
+                    dash_array="8",
+                    tooltip=f"Route {route_id} — Alternative",
+                ).add_to(route_map)
+            else:
+                st.warning(
+                    "Alternative path geometry not found. Re-run route_optimization.ipynb."
+                )
+
+            # Stops — affected ones marked as skipped
             if not route_stops.empty:
                 for _, stop_row in route_stops.iterrows():
                     is_affected = stop_row["stop_id"] in affected_stop_ids
@@ -865,28 +896,29 @@ elif page == "Route Optimization":
                         ),
                     ).add_to(route_map)
 
-            # Alternative route info banner (no geometry available — show stats panel)
-            if route_coords:
-                lats = [c[0] for c in route_coords]
-                lons = [c[1] for c in route_coords]
+            # Fit bounds to whichever path we have
+            coords_for_bounds = alt_coords if alt_coords else route_coords
+            if coords_for_bounds:
+                lats = [c[0] for c in coords_for_bounds]
+                lons = [c[1] for c in coords_for_bounds]
                 route_map.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
 
-            # Annotate map with an info marker at the route midpoint
-            if route_coords:
-                mid = route_coords[len(route_coords) // 2]
+            # Info marker at alternative route midpoint
+            if alt_coords:
+                mid = alt_coords[len(alt_coords) // 2]
                 folium.Marker(
                     location=mid,
                     icon=folium.DivIcon(
                         html=f"""
-                        <div style="background:#0d2137;border:1px solid #1a6fc4;
+                        <div style="background:#0d2137;border:1px solid #EF9F27;
                                     border-radius:4px;padding:4px 8px;
                                     font-family:monospace;font-size:11px;
                                     color:#e2e8f0;white-space:nowrap;">
-                            Alternative path · Risk ↓{route_row['risk_reduction']:.3f}
+                            Alternative · Risk ↓{route_row['risk_reduction']:.3f}
                             · +{route_row['extra_time_min']:.1f} min
                         </div>""",
-                        icon_size=(260, 30),
-                        icon_anchor=(130, 15),
+                        icon_size=(270, 30),
+                        icon_anchor=(135, 15),
                     ),
                 ).add_to(route_map)
 
