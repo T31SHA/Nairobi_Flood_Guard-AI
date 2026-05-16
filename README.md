@@ -331,10 +331,19 @@ For more information visit the:
 - [Model Notebooks](./Models/Notebooks/)
 - [Route Optimization Notebook](./Route_Optimization/route_optimization.ipynb)
 - [Presentation](./presentation.pdf)
+- [Tableau Dashboard](https://public.tableau.com/app/profile/carl.collins/viz/NairobiFloodGuardVisualisations/Story1)
+
+After cloning the repository, in order to run the notebooks effectively, ensure you install all the necessary packages by running:
+
+```bash
+pip install -r requirements.txt
+```
+
+in your terminal. (Note this will likely take a while to run. Be patient.)
 
 ### _Instructions on how to run the streamlit app_
 
-Ensure you have streamlit installed. To check if you do, you can run this in your terminal:
+Ensure you have streamlit installed. To check if you do, you can run this in your terminal (You will most likely have it after installing the required packages as above):
 
 ```bash
 streamlit --version
