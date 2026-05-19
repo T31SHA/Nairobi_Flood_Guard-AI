@@ -257,7 +257,7 @@ def render_message(role: str, content: str) -> None:
 """
     n_lines = content.count("\n") + len(content) // 80 + 1
     height = max(100, n_lines * 24 + 60)
-    st.iframe(html, height=height, scrolling=True)
+    st.iframe(html, height=height)
 
 
 # -- Data loading -------------------------------------------------------------
@@ -440,29 +440,16 @@ with st.sidebar:
 if page == "Flood Risk Dashboard":
 
     st.markdown(
-        '<div class="section-header">Kenya-Wide Flood Risk Map</div>',
+        '<div class="section-header">County Flood Risk Map</div>',
         unsafe_allow_html=True,
     )
 
-    col_filter, col_info = st.columns([2, 1])
-    with col_filter:
-        counties = sorted(df["county"].unique())
-        selected_county = st.selectbox("Filter by county", ["All Kenya"] + counties)
+    counties = sorted(df["county"].unique())
+    selected_county = st.selectbox("Filter by county", counties)
 
-    map_df = (
-        df if selected_county == "All Kenya" else df[df["county"] == selected_county]
-    )
+    map_df = df[df["county"] == selected_county]
 
-    with col_info:
-        st.markdown(
-            f"""
-        <div class="metric-card">
-            <div class="metric-label">Showing</div>
-            <div class="metric-value">{len(map_df)}<span class="metric-unit">wards</span></div>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
+    st.caption(f"{len(map_df)} wards · hover a ward for details")
 
     centre_lat = float(map_df.geometry.centroid.y.mean())
     centre_lon = float(map_df.geometry.centroid.x.mean())
