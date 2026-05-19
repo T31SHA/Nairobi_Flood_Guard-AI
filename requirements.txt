@@ -1,5 +1,6 @@
 # Core app
 streamlit==1.57.0
+groq
 
 # Data & ML
 pandas
@@ -41,6 +42,6 @@ requests
 pyyaml
 joblib
 tqdm
-groq
+
 
 python-3.11
