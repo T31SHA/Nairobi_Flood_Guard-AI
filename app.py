@@ -457,7 +457,7 @@ if page == "Flood Risk Dashboard":
 
     with st.spinner("Rendering map..."):
         fmap = build_choropleth(map_df, centre_lat, centre_lon, zoom)
-    st_folium(fmap, use_container_width=True, height=520)
+    st_folium(fmap, width="stretch", height=520)
 
     st.markdown(
         '<div class="section-header" style="margin-top:2rem">Flood Probability Distribution</div>',
@@ -488,7 +488,7 @@ if page == "Flood Risk Dashboard":
         yaxis=dict(gridcolor="#1e2d3d"),
         bargap=0.05,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown(
         '<div class="section-header">Highest Risk Wards</div>',
@@ -512,7 +512,7 @@ if page == "Flood Risk Dashboard":
                 "risk_label": "Risk Level",
             }
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -634,7 +634,7 @@ elif page == "Ward Lookup":
         margin=dict(t=30, b=30, l=30, r=30),
         height=380,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown("#### Ward Location")
     ward_lat = float(ward_row.geometry.centroid.y)
@@ -653,7 +653,7 @@ elif page == "Ward Lookup":
         },
         tooltip=f"{selected_ward} - {prob:.1%} flood probability",
     ).add_to(mini_map)
-    st_folium(mini_map, use_container_width=True, height=320)
+    st_folium(mini_map, width="stretch", height=320)
 
 
 # =============================================================================
@@ -735,7 +735,7 @@ elif page == "Route Optimization":
         "Risk Reduction",
         "Extra Time (min)",
     ]
-    st.dataframe(display_df, use_container_width=True)
+    st.dataframe(display_df, width="stretch")
     st.download_button(
         label="⬇ Download Rerouting CSV",
         data=rerouting_df.to_csv(index=False),
@@ -749,7 +749,7 @@ elif page == "Route Optimization":
         unsafe_allow_html=True,
     )
     if TRADEOFF_PNG.exists():
-        st.image(str(TRADEOFF_PNG), use_container_width=True)
+        st.image(str(TRADEOFF_PNG), width="stretch")
     else:
         st.info(
             "Tradeoff chart not found. Run route_optimization.ipynb to generate it."
@@ -771,7 +771,7 @@ elif page == "Route Optimization":
         st.caption("Nairobi ward flood risk · hover a ward for details")
         with st.spinner("Rendering flood risk map..."):
             risk_map = build_choropleth(nairobi, NAIROBI_LAT, NAIROBI_LON, zoom=11)
-        st_folium(risk_map, use_container_width=True, height=520)
+        st_folium(risk_map, width="stretch", height=520)
 
     else:
         affected_stop_ids = get_affected_stop_ids(nairobi, stops, threshold)
@@ -784,11 +784,11 @@ elif page == "Route Optimization":
         nav_left, nav_centre, nav_right = st.columns([1, 4, 1])
 
         with nav_left:
-            if st.button("← Previous", use_container_width=True):
+            if st.button("← Previous", width="stretch"):
                 st.session_state.route_idx = (st.session_state.route_idx - 1) % n_routes
 
         with nav_right:
-            if st.button("Next →", use_container_width=True):
+            if st.button("Next →", width="stretch"):
                 st.session_state.route_idx = (st.session_state.route_idx + 1) % n_routes
 
         idx = st.session_state.route_idx
@@ -966,7 +966,7 @@ elif page == "Route Optimization":
                     ),
                 ).add_to(route_map)
 
-        st_folium(route_map, use_container_width=True, height=500)
+        st_folium(route_map, width="stretch", height=500)
 
 
 # =============================================================================
@@ -1147,7 +1147,7 @@ elif page == "Model Performance":
         .style.apply(highlight_best, axis=0)
         .format("{:.3f}")
     )
-    st.dataframe(styled, use_container_width=True)
+    st.dataframe(styled, width="stretch")
 
     st.markdown(
         '<div class="section-header" style="margin-top:1.5rem">Feature Importance (XGBoost)</div>',
@@ -1179,7 +1179,7 @@ elif page == "Model Performance":
             yaxis=dict(gridcolor="#1e2d3d"),
             height=380,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     except KeyError:
         st.warning(
             "Could not find 'classifier' step in the pipeline. "
@@ -1216,4 +1216,4 @@ elif page == "Model Performance":
         margin=dict(t=10, b=10, l=10, r=10),
         height=300,
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch")
