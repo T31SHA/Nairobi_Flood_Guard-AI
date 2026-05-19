@@ -13,7 +13,6 @@ import pandas as pd
 import geopandas as gpd
 import folium
 import streamlit as st
-import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 from groq import Groq
 import plotly.express as px
@@ -256,7 +255,9 @@ def render_message(role: str, content: str) -> None:
   .msg-wrapper:hover .copy-icon-btn {{ opacity: 1 !important; }}
 </style>
 """
-    components.html(html, height=max(80, len(content) // 3 + 80), scrolling=False)
+    n_lines = content.count("\n") + len(content) // 80 + 1
+    height = max(100, n_lines * 24 + 60)
+    st.iframe(html, height=height, scrolling=True)
 
 
 # -- Data loading -------------------------------------------------------------
@@ -1016,7 +1017,7 @@ elif page == "AI Assistant":
 
     # Build rich context
     wards_context = (
-        df[
+        df[df["county"].str.lower().str.strip() == "nairobi"][
             [
                 "ward",
                 "subcounty",
@@ -1033,9 +1034,7 @@ elif page == "AI Assistant":
                 "pop2009",
             ]
         ]
-        .sort_values("flood_prob", ascending=False)[
-            df["county"].str.lower().str.strip() == "nairobi"
-        ]
+        .sort_values("flood_prob", ascending=False)
         .head(100)
         .assign(flood_prob=lambda x: x["flood_prob"].map("{:.1%}".format))
         .to_string(index=False)
@@ -1083,7 +1082,7 @@ elif page == "AI Assistant":
         "  Moderate : 20% - 45%\n"
         "  High     : 45% - 70%\n"
         "  Critical : >= 70%\n\n"
-        "--- ALL WARD DATA (top 100 by flood probability) ---\n"
+        "--- ALL NAIROBI DATA (top 100 by flood probability) ---\n"
         f"{wards_context}\n\n"
         "--- MODEL PERFORMANCE ---\n"
         f"{model_perf_context if model_perf_context else 'Model comparison data not available.'}\n\n"
