@@ -41,5 +41,6 @@ requests
 pyyaml
 joblib
 tqdm
+groq
 
 python-3.11
