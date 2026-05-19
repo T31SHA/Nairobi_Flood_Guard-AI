@@ -4,17 +4,12 @@ groq
 
 # Data & ML
 pandas
-numpy<2.0
+numpy
 scikit-learn
 xgboost
 lightgbm
 catboost
 imbalanced-learn
-
-# Deep Learning
-tensorflow==2.21.0
-torch
-torchvision
 
 # Geospatial
 geopandas
