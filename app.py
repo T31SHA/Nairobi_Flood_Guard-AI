@@ -1033,7 +1033,9 @@ elif page == "AI Assistant":
                 "pop2009",
             ]
         ]
-        .sort_values("flood_prob", ascending=False)
+        .sort_values("flood_prob", ascending=False)[
+            df["county"].str.lower().str.strip() == "nairobi"
+        ]
         .head(100)
         .assign(flood_prob=lambda x: x["flood_prob"].map("{:.1%}".format))
         .to_string(index=False)
