@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -297,7 +297,7 @@ def _load_file_cache(max_age_hours: float | None) -> dict[str, Any] | None:
         return cached
 
     fetched_at = datetime.fromisoformat(cached["fetched_at"])
-    age_hours = (datetime.now(timezone.utc) - fetched_at).total_seconds() / 3600
+    age_hours = (datetime.now(UTC) - fetched_at).total_seconds() / 3600
     if age_hours > max_age_hours:
         return None
 
@@ -387,7 +387,9 @@ def apply_live_rainfall(
     lets the exception propagate if nothing is available.
     """
     df = gdf.copy()
-    centroids = df.geometry.centroid
+    # Compute centroids in a projected CRS (geographic-degree centroids are
+    # slightly biased and geopandas warns about them), then bucket in WGS84.
+    centroids = df.geometry.to_crs("EPSG:32737").centroid.to_crs("EPSG:4326")
     df["_grid_lat"] = np.round(centroids.y / resolution) * resolution
     df["_grid_lon"] = np.round(centroids.x / resolution) * resolution
 
@@ -423,7 +425,7 @@ def apply_live_rainfall(
         try:
             grid_features = fetch_grid_rainfall(grid_points, on_progress=on_progress)
             meta["source"] = "Open-Meteo Forecast API"
-            meta["fetched_at"] = datetime.now(timezone.utc).isoformat()
+            meta["fetched_at"] = datetime.now(UTC).isoformat()
             _save_file_cache(grid_features, meta)
         except Exception as open_meteo_exc:
             if visualcrossing_api_key:
@@ -432,7 +434,7 @@ def apply_live_rainfall(
                         grid_points, visualcrossing_api_key
                     )
                     meta["source"] = "Visual Crossing (fallback)"
-                    meta["fetched_at"] = datetime.now(timezone.utc).isoformat()
+                    meta["fetched_at"] = datetime.now(UTC).isoformat()
                     meta["fallback_reason"] = str(open_meteo_exc)
                     _save_file_cache(grid_features, meta)
                 except Exception as vc_exc:

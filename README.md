@@ -207,6 +207,24 @@ The models' ROC curves reinforce this decision with XGBoost achieving the highes
 
 <img src='./Images/roc_curves.png' />
 
+### _Production Model v3 - Leakage-Free, Spatially Validated, Calibrated_
+
+The notebook comparison above used a random ward split, which leaks spatially autocorrelated terrain and rainfall between train and test. The production model is trained by the canonical pipeline in `Models/train.py`, which fixes three integrity issues:
+
+1. **No leaked or fabricated features.** Feature engineering (`Utils/feature_engineering.py`) no longer contains `ward_hist_rate` (previously set directly from the flood label), deterministic rainfall rescalings, or population-derived pseudo transport counts. Every feature is a measured or honestly derived signal.
+
+2. **Spatial cross-validation.** Wards are grouped by county with `GroupKFold`, so the model is always evaluated on counties it never saw. The random split flatters ROC AUC by ~0.03-0.04 on this dataset; the registry records both numbers.
+
+3. **Calibrated probabilities and a principled threshold.** The final model is isotonic-calibrated (probabilities can be read as real frequencies - important because route costs consume them directly), and the operating threshold is chosen from the precision-recall curve as the highest-precision point with recall ≥ 0.80.
+
+Honest county-held-out metrics (calibrated, out-of-fold): **ROC AUC 0.889 · PR AUC 0.690 · recall 0.80 · precision 0.57 · Brier 0.103**.
+
+`Models/model_registry.json` is the single source of truth: it records the model artifact path, exact feature list, operating threshold, CV scheme, metrics and library versions. The Streamlit app and the API read all of these from the registry, so serving can never drift from training. Retrain with:
+
+```bash
+python -m Models.train
+```
+
 ---
 
 <h2 align='center'>
@@ -221,9 +239,15 @@ The system works in four stages:
 
 1. **Flood probabilities given to road edges** - each road segment in Nairobi's OpenStreetMap network is assigned the flood probability of the ward it passes through via a spatial join
 
-2. **Flood-weighted Dijkstra** - each edge is penalized using the formula `cost = travel_time × (1 + α × flood_probability)`, where $\alpha$ controls the strength of the penalty. Setting $\alpha$ to 1,000,000 acts as a practical infinity - any road with non-zero flood probability becomes impassable for routing purposes. The algorithm then finds the path that minimises total cost, effectively blocking flooded roads from consideration entirely - a route is only returned if a completely flood-free path exists between the terminal stops.
+2. **Pareto set of flood-weighted alternatives** - each edge is penalized using the formula `cost = travel_time × (1 + α × flood_probability)`, and every affected route gets one alternative per α level (`Utils/live_routing.py`):
 
-   This is done so as to avoid suggesting a flooded path even as an alternative.
+   - **fastest** (α = 5) - mild penalty, short detours, may retain some exposure
+   - **balanced** (α = 50) - most of the risk reduction at a fraction of the detour
+   - **safest** (α = 1,000,000) - practical infinity; any flood-touched road becomes impassable, so a route is only returned if a completely flood-free path exists
+
+   Alternatives that collapse to the same path are deduplicated. Risk metrics are **exposure-weighted**: a path's flood risk is the travel-time-weighted mean of edge probabilities (plus the worst single edge and the share of travel time on high-risk edges), so clipping one flooded 50 m segment no longer scores the same as driving 10 km through a flood zone.
+
+   Each option also reports **stop coverage** - how many of the route's original stops remain within 300 m of the alternative path, and which ones are dropped. An experimental **stop-preserving mode** chains flood-weighted Dijkstra through the route's safe intermediate stops so passengers along the way are still picked up.
 
 3. **GTFS-RT feed** — rerouting decisions are packaged as a production-ready GTFS-RT protobuf feed with `TripUpdate` messages for each affected trip, consumable by transit apps such as Google Maps and Transit App.
 
@@ -283,46 +307,107 @@ The route optimization system translated XGBoost's flood probability predictions
 
 #### 1. Running the Flood Prediction Model
 
-To generate flood risk predictions, load `Models/best_xgboost_model.pkl` and, after ensuring that the feature names are in the right order, call `predict_proba()` on the model. The full prediction workflow is documented in `Notebooks/xgboost_notebook.ipynb`. Ensure the input data contains all required columns from `Data/floods.gpkg` before engineering features.
+Load the calibrated production model and score wards through the shared feature pipeline - always take the model path, feature list and threshold from the registry:
+
+```python
+import json, joblib, geopandas as gpd
+from Utils.feature_engineering import engineer_features
+
+registry = json.load(open("Models/model_registry.json"))
+model = joblib.load(registry["model_path"])
+wards = engineer_features(gpd.read_file("Data/floods.gpkg"))
+wards["flood_prob"] = model.predict_proba(wards[registry["feature_cols"]])[:, 1]
+high_risk = wards[wards["flood_prob"] >= registry["threshold"]]
+```
+
+To retrain (spatial CV, calibration and threshold selection included): `python -m Models.train`.
 
 #### 2. Running the Route Optimization System
 
-The route optimization notebook at `Route_Optimization/route_optimization.ipynb` is self-contained and can be run independently. It requires `Data/floods.gpkg`, `Data/nairobi_road_network.graphml`, `Data/GTFS_FEED_2019/`, and `Models/best_xgboost_model.pkl` to be present. The notebook loads the saved road network from disk — there is no need to re-download it from OpenStreetMap. Outputs are saved to `Route_Optimization/Reports/`.
+The live engine is `Utils/live_routing.py` (`run_live_rerouting` returns the full Pareto option set; `select_option` picks one option per route by preference). It requires `Data/nairobi_road_network.graphml` (Git LFS), `Data/GTFS_FEED_2019/`, and scored ward probabilities. The original notebook at `Route_Optimization/route_optimization.ipynb` documents the April 2024 event analysis.
 
 #### 3. Tuning the Flood Risk Threshold
 
-The system flags wards as high-risk at a default probability threshold of 0.45, set via the `FLOOD_THRESHOLD` constant in the route optimization notebook. This can be lowered to increase sensitivity (flag more wards as at-risk) or raised to reduce false alarms, depending on the severity of the flood event being modelled. During extreme events, a lower threshold is recommended.
+The default high-risk threshold is **read from the registry** (currently ≈ 0.30): the highest-precision operating point that keeps recall ≥ 0.80 under county-held-out validation. Because probabilities are now calibrated, thresholds are interpretable as real frequencies - lower the slider (app) or `threshold` parameter (API) during extreme events to increase sensitivity.
 
-#### 4. Adjusting the Alpha Parameter
+#### 4. Choosing a Detour Preference
 
-`ALPHA` in the route optimization notebook controls how aggressively flooded roads are penalized. The current setting of 1,000,000 effectively blocks all flood-affected roads. For scenarios where partial flooding is expected and roads remain passable, lowering alpha to 5 - 10 introduces a preference for safer roads without outright blocking them.
+Instead of a single alpha, pick a preference per use case: `fastest` (α=5) for minor flooding where roads stay passable, `balanced` (α=50) for most events, `safest` (α=1e6) when flooded roads must be avoided outright. The tradeoff chart in the app shows all three per route.
 
 #### 5. Familiarizing Yourself With the Project
 
-You should begin by reading and running `notebook.ipynb` for a full project overview. Feature engineering logic is centralised in `Utils/feature_engineering.py` - any changes to features must be reflected there to ensure consistency across the prediction and route optimization pipelines. Individual model notebooks are in `Models/Notebooks/` and can be run independently for retraining or further tuning.
+You should begin by reading and running `notebook.ipynb` for a full project overview. Feature engineering logic is centralised in `Utils/feature_engineering.py` - any changes to features must be reflected there and the model retrained (`python -m Models.train`) to keep the registry contract intact. Historical model notebooks are in `Models/Notebooks/`.
 
 ---
 
 <h2 align='center'>
-7. NEXT STEPS
+7. SERVING, AUTOMATION AND QUALITY
 </h2>
 
-1. Expand the flood label dataset
+### Streamlit App
 
-2. Incorporate real-time rainfall data
+```bash
+streamlit run app.py
+```
 
-3. Update the GTFS feed
+`app.py` is a thin router; pages live in `app_pages/` (Dashboard, Ward Lookup, Route Optimization, AI Assistant) and shared code in `app_lib/`. The sidebar switches rainfall between historical CHIRPS, live Open-Meteo, and 24/48hr forecast modes.
 
-4. Add flood depth estimation
+### REST API
 
-5. Deploy as a live API
+Model serving decoupled from the UI (FastAPI):
 
-6. Conduct ground-truth validation
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port $PORT
+```
+
+| Endpoint | Description |
+| :--- | :--- |
+| `GET /health`, `GET /registry` | Liveness and the full model contract |
+| `GET /wards/risk?county=Nairobi` | Scored wards, sorted by risk |
+| `GET /wards/{ward}/risk` | One ward's probability + features |
+| `GET /reroutes?preference=balanced` | Pareto rerouting (precomputed cache or on demand) |
+| `POST /reports` / `POST /reports/sms` | Flood report intake (JSON / Africa's Talking webhook) |
+
+Field reports accumulate in SQLite as **candidate labels for retraining** - point `REPORTS_DB_PATH` at persistent storage in production.
+
+### Scheduled Precompute
+
+```bash
+python -m scripts.refresh_cache
+```
+
+Refreshes Open-Meteo rainfall, rescores wards, and precomputes the rerouting option set into `cache/precomputed_reroutes.json` so API requests never pay the graph-load cost. Run it on a cron (e.g. every 6 hours).
+
+### Tests & CI
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+ruff check .
+pytest tests
+```
+
+The suite covers leakage regressions in feature engineering (label-invariance test), the routing engine on synthetic graphs, rainfall windowing/retries/caching, the registry contract, and the API. GitHub Actions runs lint + tests on every push and pull request.
 
 ---
 
 <h2 align='center'>
-8. FOR MORE INFORMATION
+8. NEXT STEPS
+</h2>
+
+1. Expand the flood label dataset - the training pipeline already supports multi-event labels (see the `labels` section of the model registry); UNOSAT extents for the 2023 El Niño season are the natural next addition, enabling per-event holdout validation
+
+2. Update the GTFS feed (the 2019 Digital Matatus feed predates several route changes)
+
+3. Add flood depth estimation
+
+4. Ground-truth loop - inbound SMS flood reports are now stored via `POST /reports/sms`; connect the Africa's Talking shortcode and fold confirmed reports into the label set at retraining time
+
+5. Replace the ward-area TWI proxy with real flow accumulation (HydroSHEDS) and add land-cover imperviousness (ESA WorldCover) as features
+
+---
+
+<h2 align='center'>
+9. FOR MORE INFORMATION
 </h2>
 
 For more information visit the:
