@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app_lib.config import get_secret
+
 try:
     import africastalking
 
@@ -24,9 +26,12 @@ def render_sms_panel(df, nairobi, threshold) -> None:
 
         if st.button("💰 Check AT account balance"):
             try:
+                api_key = get_secret("AT_API_KEY")
+                if not api_key:
+                    raise KeyError("AT_API_KEY")
                 africastalking.initialize(
-                    username=st.secrets.get("AT_USERNAME", "sandbox"),
-                    api_key=st.secrets["AT_API_KEY"],
+                    username=get_secret("AT_USERNAME", "sandbox"),
+                    api_key=api_key,
                 )
                 app_data = africastalking.Application.fetch_application_data()
                 st.info(f"Balance: {app_data['UserData']['balance']}")
@@ -121,8 +126,10 @@ def render_sms_panel(df, nairobi, threshold) -> None:
             use_container_width=True,
         ):
             try:
-                at_username = st.secrets.get("AT_USERNAME", "NgundoMuithya")
-                at_api_key = st.secrets["AT_API_KEY"]
+                at_username = get_secret("AT_USERNAME", "NgundoMuithya")
+                at_api_key = get_secret("AT_API_KEY")
+                if not at_api_key:
+                    raise KeyError("AT_API_KEY")
 
                 africastalking.initialize(
                     username=at_username,

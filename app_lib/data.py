@@ -24,6 +24,7 @@ from app_lib.config import (
     REROUTING_CSV,
     ROAD_GRAPH,
     ROUTE_GEOMETRIES,
+    get_secret,
     registry_booster_path,
     registry_feature_cols,
     registry_model_path,
@@ -178,7 +179,7 @@ def get_live_routes(_G, _wards_gdf, _stops_df, _stop_times, _trips, threshold, f
 
 
 def apply_horizon_rainfall(gdf, horizon_hours: int, use_cache: bool):
-    vc_key = st.secrets.get("VISUALCROSSING_API_KEY")
+    vc_key = get_secret("VISUALCROSSING_API_KEY")
     return apply_live_rainfall(
         gdf,
         use_cache=use_cache,

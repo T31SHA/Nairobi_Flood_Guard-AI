@@ -3,7 +3,7 @@
 import streamlit as st
 
 from app_lib.chat import build_system_prompt, get_groq_client, render_message
-from app_lib.config import GROQ_MODEL
+from app_lib.config import GROQ_MODEL, get_secret
 from app_lib.state import get_state
 
 state = get_state()
@@ -19,7 +19,7 @@ st.markdown(
     "or how to interpret the model results."
 )
 
-if "GROQ_API_KEY" not in st.secrets:
+if not get_secret("GROQ_API_KEY"):
     st.warning(
         "GROQ_API_KEY is not configured, so the assistant is unavailable. "
         "Add it to `.streamlit/secrets.toml` (or the deployment's secrets) "

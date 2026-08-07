@@ -6,6 +6,8 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+import streamlit as st
+
 BASE = Path(__file__).resolve().parent.parent
 DATA = BASE / "Data"
 MODELS = BASE / "Models"
@@ -48,3 +50,13 @@ def registry_model_path() -> Path:
 
 def registry_booster_path() -> Path:
     return BASE / load_registry()["booster_json_path"]
+
+
+def get_secret(key: str, default=None):
+    """st.secrets raises StreamlitSecretNotFoundError when no secrets file
+    exists at all (fresh local checkout), rather than behaving like an empty
+    mapping - so every optional secret goes through this guard."""
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default

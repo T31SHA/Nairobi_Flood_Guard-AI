@@ -7,14 +7,14 @@ import base64
 import streamlit as st
 from groq import Groq
 
-from app_lib.config import REROUTING_CSV
+from app_lib.config import REROUTING_CSV, get_secret
 from app_lib.data import load_model_comparison, load_rerouting, model_comparison_path
 from Utils.rainfall_fetcher import rainfall_summary
 
 
 @st.cache_resource
 def get_groq_client():
-    return Groq(api_key=st.secrets["GROQ_API_KEY"])
+    return Groq(api_key=get_secret("GROQ_API_KEY"))
 
 
 def render_message(role: str, content: str) -> None:
