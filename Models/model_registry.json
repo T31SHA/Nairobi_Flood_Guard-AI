@@ -1,81 +1,67 @@
 {
-  "version": "2.0",
+  "version": "3.0",
+  "created_at": "2026-08-07T08:57:28.685926+00:00",
+  "model_path": "Models/flood_model.joblib",
+  "booster_json_path": "Models/flood_model_xgb.json",
   "feature_cols": [
-    "mean_elevation",
-    "min_elevation",
-    "max_elevation",
+    "elevation_mean_m",
+    "elevation_min_m",
+    "elevation_max_m",
+    "elev_range_m",
+    "terrain_roughness",
     "slope_mean_deg",
     "twi_proxy",
-    "elev_range",
-    "terrain_roughness",
-    "is_low_lying",
-    "precip_mm",
-    "rain_cum_1d",
-    "rain_cum_2d",
-    "rain_cum_3d",
-    "rain_cum_6d",
-    "rain_mean_3d",
-    "rain_mean_7d",
-    "rain_mean_14d",
-    "rain_mean_30d",
-    "rain_std_3d",
-    "rain_std_7d",
-    "rain_max_3d",
-    "rain_max_7d",
-    "rain_max_14d",
-    "soil_moisture",
-    "is_heavy_rain",
-    "is_extreme_rain",
-    "doy_sin",
-    "doy_cos",
-    "mon_sin",
-    "mon_cos",
-    "is_long_rain",
-    "is_short_rain",
-    "is_rainy",
-    "month",
-    "n_routes",
-    "n_stops",
-    "route_density",
-    "stop_density",
-    "is_terminal",
-    "route_vuln",
-    "route_vuln_n",
-    "exp_disruption",
-    "rain_low_elev",
-    "rain_route_risk",
-    "moisture_rain",
-    "twi_rain",
-    "compound_risk",
-    "ward_hist_rate"
+    "rain_cumulative_mm",
+    "rain_max_daily_mm",
+    "rain_preflood_7d_mm",
+    "rain_recency_ratio",
+    "rain_intensity_ratio",
+    "ward_area_km2",
+    "pop_density"
   ],
-  "n_features": 47,
-  "train_dates": [
-    "2023-04-15",
-    "2023-11-20"
-  ],
-  "test_date": "2024-04-26",
-  "optimal_threshold": 0.03787637716187194,
-  "production_model": "ensemble_xgb60_rf40",
-  "metrics": {
-    "pr_auc": 0.635562,
-    "pr_auc_ci": [
-      0.303888,
-      0.894659
+  "n_features": 14,
+  "threshold": 0.2967171718676885,
+  "threshold_policy": "max precision subject to recall >= 0.8 on calibrated spatial out-of-fold predictions",
+  "precision_at_threshold": 0.5652173913043478,
+  "recall_at_threshold": 0.8045602605863192,
+  "calibration": "isotonic (CalibratedClassifierCV, county-grouped folds)",
+  "cv": {
+    "scheme": "GroupKFold(5) grouped by county",
+    "n_groups": 47
+  },
+  "model_params": {
+    "n_estimators": 400,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "tree_method": "hist",
+    "eval_metric": "logloss",
+    "random_state": 2026,
+    "n_jobs": -1,
+    "max_depth": 6,
+    "learning_rate": 0.03
+  },
+  "metrics_spatial_oof": {
+    "roc_auc": 0.889198092909396,
+    "pr_auc": 0.6904110794566143,
+    "brier": 0.10284637244696596,
+    "recall": 0.8045602605863192,
+    "precision": 0.5652173913043478,
+    "f1": 0.6639784946236559
+  },
+  "metrics_random_split": {
+    "roc_auc": 0.9234940909259307,
+    "note": "Random ward split leaks spatially autocorrelated signal; reported only to quantify optimism vs the spatial CV."
+  },
+  "labels": {
+    "events": [
+      "FL20240426KEN (UNOSAT, April 2024)"
     ],
-    "recall": 0.7,
-    "recall_ci": [
-      0.363636,
-      1.0
-    ],
-    "f1": 0.341463,
-    "f1_ci": [
-      0.129032,
-      0.521739
-    ],
-    "roc_auc": 0.714667,
-    "brier": 0.108518,
-    "sev_f1": 1.0,
-    "delay_mae": 0.000874
+    "note": "Single-event labels. To add events: stack rows per (ward, event) with event-specific rainfall columns and an 'event_id' column, then group CV folds by county as before and additionally report per-event holdout metrics."
+  },
+  "library_versions": {
+    "python": "3.12.3",
+    "xgboost": "3.4.0",
+    "scikit-learn": "1.9.0",
+    "numpy": "2.4.4"
   }
 }

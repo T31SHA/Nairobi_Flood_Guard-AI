@@ -1,143 +1,154 @@
-import numpy as np
-import geopandas as gpd
+"""
+Leakage-free, ward-level feature engineering for the flood susceptibility model.
 
-METRIC = "EPSG:32737"
-LOW_ELEV = 1_620.0
+Every feature below is a deterministic, stateless transform of *measured*
+inputs (SRTM terrain, CHIRPS/Open-Meteo rainfall, census population). This
+module intentionally does NOT contain:
+
+- ``ward_hist_rate``: previous versions set this directly from the ``flooded``
+  label, which is target leakage. A genuine historical flood frequency can be
+  reintroduced once labels from more than one flood event are available, and
+  must then be computed strictly from *past* events relative to the event
+  being predicted.
+- Fabricated rainfall proxies (e.g. ``rain_max_7d = rain_max_daily * 1.10``,
+  ``soil_moisture = rain_7d * 0.15``): deterministic rescalings of existing
+  columns add no information and distort feature-importance analyses.
+- Population-derived pseudo transport counts (``n_routes = pop / 5000``) and
+  constant columns (``is_terminal = 0``): dead or misleading weight. Real
+  GTFS-derived transport exposure lives in :func:`ward_transport_exposure`
+  and is used for impact reporting, not flood prediction.
+"""
+
+from __future__ import annotations
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+
+METRIC = "EPSG:32737"  # UTM zone 37S, metres, appropriate for Kenya
+EPS = 1e-9
+
+RAW_INPUT_COLS = [
+    "pop2009",
+    "rain_cumulative_mm",
+    "rain_max_daily_mm",
+    "rain_preflood_7d_mm",
+    "elevation_mean_m",
+    "elevation_min_m",
+    "elevation_max_m",
+    "slope_mean_deg",
+]
+
 FEATS = [
-    "mean_elevation",
-    "min_elevation",
+    # Terrain (dominant signal per EDA)
+    "elevation_mean_m",
+    "elevation_min_m",
+    "elevation_max_m",
+    "elev_range_m",
+    "terrain_roughness",
     "slope_mean_deg",
     "twi_proxy",
-    "elev_range",
-    "terrain_roughness",
-    "is_low_lying",
-    "precip_mm",
-    "rain_cum_1d",
-    "rain_cum_2d",
-    "rain_cum_3d",
-    "rain_cum_6d",
-    "rain_mean_3d",
-    "rain_mean_7d",
-    "rain_mean_14d",
-    "rain_mean_30d",
-    "rain_std_3d",
-    "rain_std_7d",
-    "rain_max_3d",
-    "rain_max_7d",
-    "rain_max_14d",
-    "soil_moisture",
-    "is_heavy_rain",
-    "is_extreme_rain",
-    "doy_sin",
-    "doy_cos",
-    "mon_sin",
-    "mon_cos",
-    "is_long_rain",
-    "is_short_rain",
-    "is_rainy",
-    "month",
-    "n_routes",
-    "n_stops",
-    "route_density",
-    "stop_density",
-    "is_terminal",
-    "route_vuln",
-    "route_vuln_n",
-    "exp_disruption",
-    "rain_low_elev",
-    "rain_route_risk",
-    "moisture_rain",
-    "twi_rain",
-    "compound_risk",
-    "ward_hist_rate",
-    "max_elevation",
+    # Rainfall: the three measured aggregates plus two ratio features that
+    # encode temporal structure trees cannot derive on their own
+    "rain_cumulative_mm",
+    "rain_max_daily_mm",
+    "rain_preflood_7d_mm",
+    "rain_recency_ratio",
+    "rain_intensity_ratio",
+    # Exposure / urbanisation
+    "ward_area_km2",
+    "pop_density",
 ]
 
 
-def minmax(s):
-    return (s - s.min()) / (s.max() - s.min() + 1e-9)
-
-
 def engineer_features(df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Append the model's feature columns to a ward-level GeoDataFrame.
+
+    Requires ``RAW_INPUT_COLS`` and a geometry column. Never reads the
+    ``flooded`` label, so it is safe to call at inference time on wards whose
+    outcome is unknown.
     """
-    Replicates the feature engineering pipeline from random_forest_notebook.ipynb.
-    Accepts a GeoDataFrame of ward-level data and returns it with all 47
-    engineered features appended, ready for prediction.
-    """
+    missing = [c for c in RAW_INPUT_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required raw input columns: {missing}")
+
     df = df.copy()
 
     # --- Terrain ---
-    metric_geom = df.to_crs(METRIC)
-    df["ward_area_km2"] = metric_geom.geometry.area / 1e6
+    metric_geom = df.geometry.to_crs(METRIC)
+    df["ward_area_km2"] = metric_geom.area / 1e6
+    df["elev_range_m"] = df["elevation_max_m"] - df["elevation_min_m"]
+    df["terrain_roughness"] = df["elev_range_m"] / (df["elevation_mean_m"] + 1)
+    # Topographic wetness proxy: ln(contributing area / tan(slope)). Uses ward
+    # area as the contributing-area stand-in until a flow-accumulation raster
+    # is integrated.
     slope_rad = np.radians(df["slope_mean_deg"].clip(lower=0.1))
     df["twi_proxy"] = np.log(df["ward_area_km2"] * 1e6 / (np.tan(slope_rad) + 1e-6))
-    df["elev_range"] = df["elevation_max_m"] - df["elevation_min_m"]
-    df["terrain_roughness"] = df["elev_range"] / (df["elevation_mean_m"] + 1)
-    df["is_low_lying"] = (df["elevation_min_m"] < LOW_ELEV).astype(int)
-    df["mean_elevation"] = df["elevation_mean_m"]
-    df["min_elevation"] = df["elevation_min_m"]
-    df["max_elevation"] = df["elevation_max_m"]
 
-    # --- Rainfall proxies ---
-    d = df["rain_max_daily_mm"]
-    r7 = df["rain_preflood_7d_mm"]
-    rt = df["rain_cumulative_mm"]
-
-    df["precip_mm"] = d
-    df["rain_cum_1d"] = d
-    df["rain_max_3d"] = d
-    df["rain_cum_2d"] = r7 * (2 / 7)
-    df["rain_cum_3d"] = r7 * (3 / 7)
-    df["rain_cum_6d"] = r7 * (6 / 7)
-    df["rain_mean_3d"] = df["rain_cum_3d"] / 3
-    df["rain_mean_7d"] = r7 / 7
-    df["rain_mean_14d"] = rt / 14
-    df["rain_mean_30d"] = rt / 30
-    df["rain_std_3d"] = df["rain_cum_3d"] * 0.25
-    df["rain_std_7d"] = r7 * 0.25
-    df["rain_max_7d"] = d * 1.10
-    df["rain_max_14d"] = d * 1.20
-    df["soil_moisture"] = r7 * 0.15
-    df["is_heavy_rain"] = (d > 25).astype(int)
-    df["is_extreme_rain"] = (d > 50).astype(int)
-
-    # --- Transport proxies ---
-    pop = df["pop2009"].clip(lower=1)
-    df["n_routes"] = (pop / 5_000).clip(1, 50).round().astype(int)
-    df["n_stops"] = (pop / 1_500).clip(2, 150).round().astype(int)
-    df["route_density"] = df["n_routes"] / (df["ward_area_km2"] + 1e-6)
-    df["stop_density"] = df["n_stops"] / (df["ward_area_km2"] + 1e-6)
-    df["is_terminal"] = 0
-
-    # --- Seasonality (fixed to April 26 flood date) ---
-    doy, month = 117, 4
-    df["doy_sin"] = np.sin(2 * np.pi * doy / 365)
-    df["doy_cos"] = np.cos(2 * np.pi * doy / 365)
-    df["mon_sin"] = np.sin(2 * np.pi * month / 12)
-    df["mon_cos"] = np.cos(2 * np.pi * month / 12)
-    df["is_long_rain"] = 1
-    df["is_short_rain"] = 0
-    df["is_rainy"] = 1
-    df["month"] = month
-
-    # --- Interaction features ---
-    elev_pen = np.log1p((df["mean_elevation"] - LOW_ELEV).clip(lower=0)) + 1
-    df["route_vuln"] = (df["route_density"] * (1 + df["is_terminal"])) / elev_pen
-    df["route_vuln_n"] = minmax(df["route_vuln"])
-    df["exp_disruption"] = df["route_vuln"] * df["precip_mm"]
-    df["rain_low_elev"] = df["rain_cum_3d"] * df["is_low_lying"]
-    df["rain_route_risk"] = df["rain_cum_3d"] * df["route_vuln_n"]
-    df["moisture_rain"] = df["soil_moisture"] * df["precip_mm"]
-    df["twi_rain"] = df["twi_proxy"] * df["rain_cum_6d"]
-    df["compound_risk"] = (
-        0.35 * minmax(df["rain_cum_3d"])
-        + 0.25 * df["is_low_lying"]
-        + 0.20 * minmax(df["soil_moisture"])
-        + 0.10 * minmax(df["twi_proxy"])
-        + 0.10 * df["route_vuln_n"]
+    # --- Rainfall temporal structure ---
+    # Share of the 90-day total that fell in the final week: distinguishes a
+    # sudden deluge from steadily accumulated rain at equal totals.
+    df["rain_recency_ratio"] = df["rain_preflood_7d_mm"] / (
+        df["rain_cumulative_mm"] + EPS
+    )
+    # How concentrated the wettest day was within the final week.
+    df["rain_intensity_ratio"] = df["rain_max_daily_mm"] / (
+        df["rain_preflood_7d_mm"] + EPS
     )
 
-    # --- Historical flood rate ---
-    df["ward_hist_rate"] = df["flooded"]
+    # --- Exposure / urbanisation ---
+    df["pop_density"] = df["pop2009"].clip(lower=1) / (df["ward_area_km2"] + EPS)
 
     return df
+
+
+def ward_transport_exposure(
+    wards_gdf: gpd.GeoDataFrame,
+    stops_df: pd.DataFrame,
+    stop_times: pd.DataFrame,
+    trips: pd.DataFrame,
+) -> pd.DataFrame:
+    """Real GTFS-derived transport exposure per ward, for impact reporting.
+
+    Counts the actual matatu stops located in each ward and the number of
+    distinct routes serving those stops. Wards outside the GTFS coverage area
+    (all of Kenya except Nairobi for the 2019 feed) get zeros. These are
+    *exposure* metrics - how much transit service is at stake if a ward
+    floods - and are deliberately not model features, since GTFS coverage is
+    Nairobi-only while the model is trained nationwide.
+
+    Returns a DataFrame indexed like ``wards_gdf`` with columns
+    ``n_stops``, ``n_routes``, ``stop_density`` and ``route_density``.
+    """
+    stops_gdf = gpd.GeoDataFrame(
+        stops_df[["stop_id"]],
+        geometry=gpd.points_from_xy(stops_df["stop_lon"], stops_df["stop_lat"]),
+        crs="EPSG:4326",
+    )
+    wards = wards_gdf[["geometry"]].copy()
+    wards["_ward_idx"] = wards.index
+
+    joined = gpd.sjoin(
+        stops_gdf, wards.to_crs(stops_gdf.crs), how="inner", predicate="within"
+    )
+
+    stop_to_routes = (
+        stop_times[["stop_id", "trip_id"]]
+        .merge(trips[["trip_id", "route_id"]], on="trip_id")
+        .groupby("stop_id")["route_id"]
+        .agg(set)
+    )
+
+    n_stops = joined.groupby("_ward_idx")["stop_id"].nunique()
+    n_routes = joined.groupby("_ward_idx")["stop_id"].apply(
+        lambda ids: len(set().union(*(stop_to_routes.get(s, set()) for s in ids)))
+    )
+
+    out = pd.DataFrame(index=wards_gdf.index)
+    out["n_stops"] = n_stops.reindex(out.index).fillna(0).astype(int)
+    out["n_routes"] = n_routes.reindex(out.index).fillna(0).astype(int)
+
+    area_km2 = wards_gdf.geometry.to_crs(METRIC).area / 1e6
+    out["stop_density"] = out["n_stops"] / (area_km2 + EPS)
+    out["route_density"] = out["n_routes"] / (area_km2 + EPS)
+    return out
