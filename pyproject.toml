@@ -1,0 +1,25 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# Correctness-focused: pyflakes, pycodestyle errors, import sorting, and
+# a small set of bug-prone patterns. Style-only rules are intentionally
+# left out to keep the signal high.
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+ignore = [
+    "E731", # lambda assignments are fine for short style callbacks
+    "B905", # zip(strict=...) everywhere adds noise; lengths are guarded where it matters
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["Utils", "app_lib", "Models"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
