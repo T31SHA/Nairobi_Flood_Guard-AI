@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 import platform
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import geopandas as gpd
@@ -206,7 +206,7 @@ def main() -> None:
 
     registry = {
         "version": "3.0",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "model_path": str(MODEL_PATH.relative_to(BASE)),
         "booster_json_path": str(BOOSTER_JSON_PATH.relative_to(BASE)),
         "feature_cols": FEATS,
