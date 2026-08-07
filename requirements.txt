@@ -1,15 +1,24 @@
-streamlit
-requests
-pandas
-geopandas
-networkx
-osmnx
-folium
-streamlit-folium
-groq
-plotly
-xgboost
-scikit-learn
-imblearn
-africastalking
-shap
+# Runtime dependencies, pinned to the versions the pipeline was validated
+# against. The model artifacts (Models/flood_model.joblib) are serialized
+# with these exact xgboost/scikit-learn versions - bump them together and
+# re-run `python -m Models.train` when upgrading.
+numpy==2.4.4
+pandas==3.0.5
+geopandas==1.1.4
+shapely==2.1.2
+networkx==3.6.1
+osmnx==2.1.1
+scikit-learn==1.9.0
+xgboost==3.4.0
+joblib==1.5.3
+shap==0.52.0
+imbalanced-learn==0.14.2
+requests==2.33.1
+streamlit==1.61.1
+streamlit-folium==0.27.4
+folium==0.20.0
+plotly==6.9.0
+groq==1.6.0
+africastalking==2.0.3
+fastapi==0.141.1
+uvicorn==0.52.1
