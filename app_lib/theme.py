@@ -202,6 +202,19 @@ iframe[title="streamlit_folium.st_folium"] {
 }
 
 hr { border-top: 1px solid var(--line-soft) !important; }
+
+/* Narrow viewports: the fixed-rem banner/type scale overflows phones, so
+   step it down. Judges and audience frequently glance at the app on one. */
+@media (max-width: 768px) {
+    .header-banner { padding: 1.5rem 1rem 1.25rem; margin: -1rem -1rem 1.25rem; }
+    .header-title { font-size: 1.9rem; }
+    .header-subtitle { font-size: 0.68rem; }
+    .metric-value { font-size: 1.25rem; }
+    .route-stat-value { font-size: 1.1rem; }
+    .route-stat-card { padding: 0.7rem 0.5rem; }
+    .section-header { font-size: 1.05rem; }
+    div[data-testid="stMetric"] { padding: 0.5rem 0.6rem; }
+}
 </style>
 """
 

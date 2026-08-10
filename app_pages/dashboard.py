@@ -1,17 +1,88 @@
 """Flood Risk Dashboard page."""
 
+import geopandas as gpd
+import pandas as pd
 import plotly.express as px
 import streamlit as st
 from streamlit_folium import st_folium
 
+from app_lib.data import load_gtfs, load_precomputed_reroutes
 from app_lib.maps import build_choropleth
 from app_lib.state import get_state
 from app_lib.theme import PLOTLY_LAYOUT
+from Utils.live_routing import compute_affected_routes, select_option
 from Utils.rainfall_fetcher import rainfall_summary
 
 state = get_state()
 df = state["df"]
+nairobi = state["nairobi"]
 threshold = state["threshold"]
+
+# -- Headline impact metrics (10-second read) --------------------------------
+high_risk_nairobi = nairobi[nairobi["flood_prob"] >= threshold]
+
+_routes_df, trips_df, _shapes_df, stops_df, stop_times_df = load_gtfs()
+stops_gdf = gpd.GeoDataFrame(
+    stops_df,
+    geometry=gpd.points_from_xy(stops_df["stop_lon"], stops_df["stop_lat"]),
+    crs="EPSG:4326",
+)
+affected_route_ids, affected_stops = compute_affected_routes(
+    nairobi, stops_gdf, stop_times_df, trips_df, threshold
+)
+
+# Rerouting impact quoted from the latest scheduled refresh (the dashboard
+# never pays the graph-load cost itself).
+pre = load_precomputed_reroutes()
+avg_reduction = stops_served_txt = None
+pre_threshold = None
+if pre:
+    pre_options = pd.DataFrame(pre["options"])
+    pre_threshold = pre["threshold"]
+    if not pre_options.empty:
+        balanced = select_option(pre_options, "balanced")
+        avg_reduction = balanced["risk_reduction"].mean()
+        if balanced["stops_served"].notna().any():
+            served_pct = (
+                balanced["stops_served"].sum() / balanced["stops_total"].sum()
+            )
+            stops_served_txt = f"{served_pct:.0%}"
+
+h1, h2, h3, h4 = st.columns(4)
+with h1:
+    st.metric(
+        "People in High-Risk Wards",
+        f"{int(high_risk_nairobi['pop2009'].sum()):,}",
+        help="Nairobi wards at or above the current threshold (2009 census).",
+    )
+with h2:
+    st.metric(
+        "Matatu Routes Affected",
+        len(affected_route_ids),
+        help="Routes serving a stop inside a currently high-risk Nairobi ward.",
+    )
+with h3:
+    st.metric(
+        "Avg Risk Reduction",
+        f"{avg_reduction:.3f}" if avg_reduction is not None else "—",
+        help=(
+            f"Balanced option, latest scheduled refresh (threshold "
+            f"{pre_threshold:.2f})."
+            if pre_threshold is not None
+            else "Run `make refresh-cache` to populate."
+        ),
+    )
+with h4:
+    st.metric(
+        "Stops Still Served",
+        stops_served_txt or "—",
+        help=(
+            "Share of original stops within 300 m of the balanced detour "
+            "(latest scheduled refresh)."
+            if stops_served_txt
+            else "Run `make refresh-cache` to populate."
+        ),
+    )
 
 if state["use_open_meteo"]:
     mode_label = (
