@@ -66,9 +66,11 @@ mode_label = (
 
 if use_open_meteo:
     if not OSMNX_AVAILABLE:
-        st.warning(
+        # Expected-and-handled on minimal installs, not a failure: the page
+        # falls back to the historical rerouting results by design.
+        st.info(
             "osmnx isn't installed, so recomputed rerouting isn't "
-            "available here. Falling back to the historical (Apr 2024) "
+            "available here. Showing the historical (Apr 2024) "
             "rerouting results below. Install with `pip install osmnx`."
         )
     else:
@@ -100,9 +102,11 @@ if use_open_meteo:
                 routing_source = "live"
                 routing_meta["mode_label"] = mode_label
             except Exception as exc:
+                # Genuinely unexpected (e.g. corrupt graph file) - keep this
+                # a warning, but make clear the page still has full results.
                 st.warning(
-                    f"Recomputing {mode_label} routing failed ({exc}). "
-                    "Falling back to historical results."
+                    f"Could not recompute {mode_label} routing ({exc}). "
+                    "Showing the historical (Apr 2024) results below."
                 )
 
 if routing_source == "historical":

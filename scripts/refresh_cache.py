@@ -31,6 +31,7 @@ import pandas as pd
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
+from scripts.verify_data_assets import check_assets  # noqa: E402
 from Utils.feature_engineering import engineer_features  # noqa: E402
 from Utils.live_routing import load_road_graph, run_live_rerouting  # noqa: E402
 from Utils.rainfall_fetcher import RAIN_COLS, apply_live_rainfall  # noqa: E402
@@ -56,6 +57,14 @@ def main() -> None:
         help="Skip the Open-Meteo fetch and score with on-disk rainfall",
     )
     args = parser.parse_args()
+
+    # Fail fast on a corrupt/placeholder asset (e.g. an un-pulled Git LFS
+    # pointer) rather than 30s into the graph load with a cryptic XML error.
+    problems = check_assets()
+    if problems:
+        raise SystemExit(
+            "Data asset check FAILED:\n" + "\n".join(f"  - {p}" for p in problems)
+        )
 
     registry = json.load(open(REGISTRY_PATH, encoding="utf-8"))
     threshold = args.threshold if args.threshold is not None else registry["threshold"]

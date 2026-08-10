@@ -25,5 +25,12 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Data asset pre-check
+        # Catches an un-pulled Git LFS pointer (e.g. ZIP download or clone
+        # without LFS) instead of letting it fail silently downstream.
+        # Non-blocking: per-push CI intentionally skips the LFS payload.
+        run: python -m scripts.verify_data_assets
+        continue-on-error: true
+
       - name: Test
         run: pytest tests -v
