@@ -43,10 +43,24 @@ QA - see JUDGE_BRIEF.md)_.
    existing transit infrastructure."
 
 4. **Alert History (1:05–1:20).** Sidebar → *Get SMS alerts for your ward* →
-   subscribe a phone to the simulated ward's county. In a terminal:
-   `make refresh-cache` → a new threshold crossing fires exactly one SMS
-   (or a logged `no_credentials` decision without AT keys). Show the entry in
-   the timeline. "A ward that stays high alerts once, not every run."
+   subscribe a phone to the ward's county. Alerts fire on the *scheduled*
+   refresh when a ward newly crosses; to trigger one deterministically on
+   stage, seed the previous-run snapshot low for one ward, then refresh:
+
+   ```bash
+   python - <<'EOF'
+   import json
+   p = "cache/last_scored.json"
+   s = json.load(open(p))
+   s["wards"]["Ruai Ward|Nairobi"]["prob"] = 0.10   # "last run it was calm"
+   json.dump(s, open(p, "w"))
+   EOF
+   make refresh-cache   # -> "1 new crossing(s); 1 logged" (real SMS if AT keys set)
+   ```
+
+   Reload the Alert History page: exactly one new entry for that ward, phone
+   masked. Run `make refresh-cache` again: zero - "a ward that stays high
+   alerts once, not every run."
 
 5. **Model Card (1:20–1:30).** Close on rigor: spatial OOF ROC AUC 0.889 vs
    leaky random 0.923, isotonic calibration, recall-first threshold policy,

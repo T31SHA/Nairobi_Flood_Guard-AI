@@ -344,13 +344,22 @@ You should begin by reading and running `notebook.ipynb` for a full project over
 7. SERVING, AUTOMATION AND QUALITY
 </h2>
 
+### One-Command Demo
+
+```bash
+make demo          # asset preflight -> cache warm-up -> API + Streamlit together
+docker compose up  # or fully containerized: API on :8000, app on :8501
+```
+
+`make demo` first runs `scripts/verify_data_assets.py`, which fails loudly with a remediation hint if a large asset is an un-pulled Git LFS pointer (run `git lfs pull`, or regenerate the road network with `python -m scripts.rebuild_road_network`). See `DEMO_SCRIPT.md` for the rehearsed 60–90 second run-of-show.
+
 ### Streamlit App
 
 ```bash
-streamlit run app.py
+streamlit run app.py    # or: make app
 ```
 
-`app.py` is a thin router; pages live in `app_pages/` (Dashboard, Ward Lookup, Route Optimization, AI Assistant) and shared code in `app_lib/`. The sidebar switches rainfall between historical CHIRPS, live Open-Meteo, and 24/48hr forecast modes.
+`app.py` is a thin router; pages live in `app_pages/` (Dashboard, Ward Lookup, Route Optimization, Alert History, Model Card, AI Assistant) and shared code in `app_lib/`. The sidebar switches rainfall between historical CHIRPS, live Open-Meteo, and 24/48hr forecast modes, hosts the SMS alert opt-in form, and includes a clearly-labeled **Simulate Scenario** control that forces one ward's risk in memory so the map, metrics and rerouting visibly react.
 
 ### REST API
 
@@ -366,17 +375,22 @@ uvicorn api.main:app --host 0.0.0.0 --port $PORT
 | `GET /wards/risk?county=Nairobi` | Scored wards, sorted by risk |
 | `GET /wards/{ward}/risk` | One ward's probability + features |
 | `GET /reroutes?preference=balanced` | Pareto rerouting (precomputed cache or on demand) |
+| `GET /reroutes/gtfs-rt` | The same option set as a GTFS-Realtime v2.0 protobuf feed - immediately consumable by existing transit infrastructure |
 | `POST /reports` / `POST /reports/sms` | Flood report intake (JSON / Africa's Talking webhook) |
+| `POST /subscribers` / `DELETE /subscribers` | Opt a phone number into SMS alerts for a ward or county |
+| `GET /alerts` | The alert audit log (recipient numbers masked) |
 
-Field reports accumulate in SQLite as **candidate labels for retraining** - point `REPORTS_DB_PATH` at persistent storage in production.
+Field reports accumulate in SQLite as **candidate labels for retraining** - point `REPORTS_DB_PATH` at persistent storage in production. The app's Alert History page surfaces both the alert audit trail and recent field reports.
 
-### Scheduled Precompute
+### Scheduled Precompute & Early-Warning Loop
 
 ```bash
-python -m scripts.refresh_cache
+python -m scripts.refresh_cache    # or: make refresh-cache
 ```
 
 Refreshes Open-Meteo rainfall, rescores wards, and precomputes the rerouting option set into `cache/precomputed_reroutes.json` so API requests never pay the graph-load cost. Run it on a cron (e.g. every 6 hours).
+
+It is also the early-warning loop: after scoring, it diffs ward probabilities against the previous run's snapshot (`cache/last_scored.json`) and sends an SMS to every active subscriber of a ward (or its county) that **newly crossed** the threshold or escalated into the critical band - logging every decision to the `alerts_sent` table. A ward that stays above threshold alerts once, never repeatedly; the first run establishes the baseline without alerting (`--alert-on-baseline` overrides).
 
 ### Tests & CI
 
@@ -386,7 +400,7 @@ ruff check .
 pytest tests
 ```
 
-The suite covers leakage regressions in feature engineering (label-invariance test), the routing engine on synthetic graphs, rainfall windowing/retries/caching, the registry contract, and the API. GitHub Actions runs lint + tests on every push and pull request.
+The suite covers leakage regressions in feature engineering (label-invariance test), the routing engine on synthetic graphs, rainfall windowing/retries/caching, the registry contract, the API (including the GTFS-RT protobuf contract), GTFS-RT feed generation on a synthetic feed, and the alert engine's crossing/de-dup/baseline lifecycle. GitHub Actions runs lint + tests on every push and pull request, plus a fast non-blocking data-asset pre-check that catches an un-pulled Git LFS pointer without downloading the ~100 MB graph.
 
 ---
 
@@ -394,13 +408,17 @@ The suite covers leakage regressions in feature engineering (label-invariance te
 8. NEXT STEPS
 </h2>
 
+Shipped since the original submission: the GTFS-RT feed is served live at `/reroutes/gtfs-rt` (no longer notebook-only); SMS early warning is autonomous (threshold-crossing alerts with idempotent de-dup, subscriber opt-in, and a visible audit trail); `make demo` / `docker compose up` prove the "no new infrastructure" claim; a data-asset preflight guards the Git LFS road network. See `JUDGE_BRIEF.md` for the full list.
+
+Still open:
+
 1. Expand the flood label dataset - the training pipeline already supports multi-event labels (see the `labels` section of the model registry); UNOSAT extents for the 2023 El Niño season are the natural next addition, enabling per-event holdout validation
 
 2. Update the GTFS feed (the 2019 Digital Matatus feed predates several route changes)
 
 3. Add flood depth estimation
 
-4. Ground-truth loop - inbound SMS flood reports are now stored via `POST /reports/sms`; connect the Africa's Talking shortcode and fold confirmed reports into the label set at retraining time
+4. Ground-truth loop, second half - inbound SMS flood reports are stored via `POST /reports/sms` and visible on the Alert History page; remaining work is connecting the Africa's Talking shortcode for inbound keyword opt-in (e.g. text `JOIN <ward>`) and folding confirmed reports into the label set at retraining time
 
 5. Replace the ward-area TWI proxy with real flow accumulation (HydroSHEDS) and add land-cover imperviousness (ESA WorldCover) as features
 

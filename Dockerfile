@@ -24,6 +24,9 @@ COPY . .
 # Fail the build here, not on stage, if a data asset is an LFS pointer.
 RUN python -m scripts.verify_data_assets
 
+# Skip Streamlit's first-run email prompt (it blocks headless startup).
+RUN mkdir -p /root/.streamlit && printf '[general]\nemail = ""\n' > /root/.streamlit/credentials.toml
+
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000 8501

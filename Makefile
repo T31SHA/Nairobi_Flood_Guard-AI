@@ -19,7 +19,7 @@ verify-assets:
 	$(PY) -m scripts.verify_data_assets
 
 app:
-	streamlit run app.py
+	streamlit run app.py < /dev/null
 
 api:
 	uvicorn api.main:app --host 0.0.0.0 --port 8000
@@ -47,7 +47,7 @@ demo: verify-assets
 	@uvicorn api.main:app --host 0.0.0.0 --port 8000 & \
 	API_PID=$$!; \
 	trap 'kill $$API_PID 2>/dev/null' EXIT; \
-	streamlit run app.py
+	streamlit run app.py < /dev/null
 
 docker:
 	docker compose up --build
