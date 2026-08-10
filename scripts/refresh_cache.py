@@ -33,7 +33,11 @@ sys.path.insert(0, str(BASE))
 
 from scripts.verify_data_assets import check_assets  # noqa: E402
 from Utils.feature_engineering import engineer_features  # noqa: E402
-from Utils.live_routing import load_road_graph, run_live_rerouting  # noqa: E402
+from Utils.live_routing import (  # noqa: E402
+    compute_affected_routes,
+    load_road_graph,
+    run_live_rerouting,
+)
 from Utils.rainfall_fetcher import RAIN_COLS, apply_live_rainfall  # noqa: E402
 
 FLOODS_GPKG = BASE / "Data" / "floods.gpkg"
@@ -108,6 +112,17 @@ def main() -> None:
         f"rerouted in {time.time() - t0:.0f}s"
     )
 
+    # Stop IDs inside high-risk wards, persisted so /reroutes/gtfs-rt can flag
+    # SKIPPED stops consistently with the cached options (no recompute drift).
+    stops_gdf = gpd.GeoDataFrame(
+        stops,
+        geometry=gpd.points_from_xy(stops["stop_lon"], stops["stop_lat"]),
+        crs="EPSG:4326",
+    )
+    _affected_routes, affected_stop_ids = compute_affected_routes(
+        nairobi, stops_gdf, stop_times, trips, threshold
+    )
+
     now = datetime.now(UTC)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_PATH, "w", encoding="utf-8") as f:
@@ -119,6 +134,7 @@ def main() -> None:
                 "meta": meta,
                 "options": options_df.to_dict(orient="records"),
                 "geometries": geoms,
+                "affected_stop_ids": sorted(affected_stop_ids),
             },
             f,
         )

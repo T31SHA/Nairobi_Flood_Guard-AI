@@ -8,6 +8,7 @@ Endpoints:
     GET  /wards/{ward}/risk   one ward's risk + features
     GET  /reroutes            rerouting options (precomputed cache if fresh,
                               otherwise computed on demand - slow first call)
+    GET  /reroutes/gtfs-rt    the same options as a GTFS-Realtime protobuf feed
     POST /reports             flood report intake (JSON)
     POST /reports/sms         Africa's Talking inbound-SMS webhook (form)
     GET  /reports             list stored flood reports
@@ -36,7 +37,7 @@ from typing import Any
 import geopandas as gpd
 import joblib
 import pandas as pd
-from fastapi import FastAPI, Form, HTTPException, Query
+from fastapi import FastAPI, Form, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from Utils.feature_engineering import engineer_features
@@ -213,21 +214,7 @@ def reroutes(
             status_code=422, detail=f"preference must be one of {labels}"
         )
     thr = threshold if threshold is not None else _registry()["threshold"]
-
-    payload = None
-    if PRECOMPUTED_REROUTES.exists():
-        with open(PRECOMPUTED_REROUTES, encoding="utf-8") as f:
-            candidate = json.load(f)
-        age_h = (time.time() - candidate["generated_at_unix"]) / 3600
-        if age_h <= PRECOMPUTED_MAX_AGE_HOURS and abs(
-            candidate["threshold"] - thr
-        ) < 1e-9:
-            payload = candidate
-            payload["served_from"] = "precomputed"
-
-    if payload is None:
-        payload = _compute_reroutes(thr)
-        payload["served_from"] = "on_demand"
+    payload = _reroutes_payload(thr)
 
     options_df = pd.DataFrame(payload["options"])
     picked = (
@@ -246,21 +233,61 @@ def reroutes(
     }
 
 
-def _compute_reroutes(threshold: float) -> dict:
-    from Utils.live_routing import load_road_graph, run_live_rerouting
+def _reroutes_payload(threshold: float) -> dict:
+    """The rerouting payload shared by /reroutes and /reroutes/gtfs-rt:
+    precomputed cache when fresh and threshold-matched, else on demand."""
+    if PRECOMPUTED_REROUTES.exists():
+        with open(PRECOMPUTED_REROUTES, encoding="utf-8") as f:
+            candidate = json.load(f)
+        age_h = (time.time() - candidate["generated_at_unix"]) / 3600
+        if age_h <= PRECOMPUTED_MAX_AGE_HOURS and abs(
+            candidate["threshold"] - threshold
+        ) < 1e-9:
+            candidate["served_from"] = "precomputed"
+            return candidate
 
+    payload = _compute_reroutes(threshold)
+    payload["served_from"] = "on_demand"
+    return payload
+
+
+def _gtfs_tables() -> dict:
     with _lock:
-        if "graph" not in _cache:
-            _cache["graph"] = load_road_graph(ROAD_GRAPH)
         if "gtfs" not in _cache:
             _cache["gtfs"] = {
                 "stops": pd.read_csv(GTFS_DIR / "stops.txt"),
                 "stop_times": pd.read_csv(GTFS_DIR / "stop_times.txt"),
                 "trips": pd.read_csv(GTFS_DIR / "trips.txt"),
             }
+    return _cache["gtfs"]
+
+
+def _affected_stop_ids(nairobi: gpd.GeoDataFrame, threshold: float) -> list[str]:
+    """Stop IDs inside currently high-risk wards. Computed from the scored
+    wards + GTFS tables alone (no road graph needed), so it stays cheap."""
+    from Utils.live_routing import compute_affected_routes
+
+    gtfs = _gtfs_tables()
+    stops_gdf = gpd.GeoDataFrame(
+        gtfs["stops"],
+        geometry=gpd.points_from_xy(gtfs["stops"]["stop_lon"], gtfs["stops"]["stop_lat"]),
+        crs="EPSG:4326",
+    )
+    _routes, affected = compute_affected_routes(
+        nairobi, stops_gdf, gtfs["stop_times"], gtfs["trips"], threshold
+    )
+    return sorted(affected)
+
+
+def _compute_reroutes(threshold: float) -> dict:
+    from Utils.live_routing import load_road_graph, run_live_rerouting
+
+    with _lock:
+        if "graph" not in _cache:
+            _cache["graph"] = load_road_graph(ROAD_GRAPH)
+    gtfs = _gtfs_tables()
     wards = _scored_wards()
     nairobi = wards[wards["county"].str.lower() == "nairobi"].copy()
-    gtfs = _cache["gtfs"]
     options_df, _geoms, meta = run_live_rerouting(
         _cache["graph"],
         nairobi,
@@ -276,7 +303,38 @@ def _compute_reroutes(threshold: float) -> dict:
         "threshold": threshold,
         "meta": meta,
         "options": options_df.to_dict(orient="records"),
+        "affected_stop_ids": _affected_stop_ids(nairobi, threshold),
     }
+
+
+@app.get("/reroutes/gtfs-rt")
+def reroutes_gtfs_rt(
+    threshold: float | None = Query(default=None, ge=0.0, le=1.0),
+) -> Response:
+    """The current rerouting option set as a GTFS-Realtime v2.0 feed
+    (protobuf), immediately consumable by existing transit infrastructure:
+    one ``ADDED`` TripUpdate per trip of every affected route, with stops in
+    high-risk wards flagged ``SKIPPED``."""
+    from Utils.gtfs_rt import build_gtfs_rt_feed
+
+    thr = threshold if threshold is not None else _registry()["threshold"]
+    payload = _reroutes_payload(thr)
+    gtfs = _gtfs_tables()
+
+    affected = payload.get("affected_stop_ids")
+    if affected is None:
+        # Cache file predates the affected-stop-ids field; recompute cheaply.
+        wards = _scored_wards()
+        nairobi = wards[wards["county"].str.lower() == "nairobi"].copy()
+        affected = _affected_stop_ids(nairobi, thr)
+
+    blob = build_gtfs_rt_feed(
+        pd.DataFrame(payload["options"]),
+        gtfs["trips"],
+        gtfs["stop_times"],
+        affected,
+    )
+    return Response(content=blob, media_type="application/x-protobuf")
 
 
 @app.post("/reports", status_code=201)
