@@ -18,8 +18,16 @@ PY ?= python3
 verify-assets:
 	$(PY) -m scripts.verify_data_assets
 
-app:
-	streamlit run app.py < /dev/null
+# Streamlit's first-run email prompt reads /dev/tty (not stdin) and blocks
+# headless startup; an empty-credentials file is the documented bypass.
+STREAMLIT_CREDS := $(HOME)/.streamlit/credentials.toml
+
+$(STREAMLIT_CREDS):
+	@mkdir -p $(HOME)/.streamlit
+	@printf '[general]\nemail = ""\n' > $@
+
+app: $(STREAMLIT_CREDS)
+	streamlit run app.py
 
 api:
 	uvicorn api.main:app --host 0.0.0.0 --port 8000
@@ -35,7 +43,7 @@ refresh-cache: verify-assets
 
 # Warm the rerouting cache so the demo never pays the graph-load cost on
 # stage, then serve both processes from one terminal. Requires a POSIX shell.
-demo: verify-assets
+demo: verify-assets $(STREAMLIT_CREDS)
 	@echo "==> Warming rerouting cache (skips network rainfall fetch)"
 	$(PY) -m scripts.refresh_cache --skip-rainfall
 	@echo ""
@@ -47,7 +55,7 @@ demo: verify-assets
 	@uvicorn api.main:app --host 0.0.0.0 --port 8000 & \
 	API_PID=$$!; \
 	trap 'kill $$API_PID 2>/dev/null' EXIT; \
-	streamlit run app.py < /dev/null
+	streamlit run app.py
 
 docker:
 	docker compose up --build
