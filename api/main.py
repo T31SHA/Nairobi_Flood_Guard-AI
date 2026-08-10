@@ -12,6 +12,8 @@ Endpoints:
     POST /reports             flood report intake (JSON)
     POST /reports/sms         Africa's Talking inbound-SMS webhook (form)
     GET  /reports             list stored flood reports
+    POST /subscribers         opt a phone number into SMS alerts for a ward/county
+    GET  /alerts              alert audit log (phones masked)
 
 Run locally:   uvicorn api.main:app --reload
 Production:    uvicorn api.main:app --host 0.0.0.0 --port $PORT
@@ -40,6 +42,7 @@ import pandas as pd
 from fastapi import FastAPI, Form, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
+from Utils import alert_store
 from Utils.feature_engineering import engineer_features
 
 BASE = Path(__file__).resolve().parent.parent
@@ -87,24 +90,10 @@ def _scored_wards() -> gpd.GeoDataFrame:
 
 
 def _reports_db() -> sqlite3.Connection:
-    REPORTS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(REPORTS_DB_PATH)
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS flood_reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            source TEXT NOT NULL,
-            phone TEXT,
-            ward TEXT,
-            county TEXT,
-            lat REAL,
-            lon REAL,
-            text TEXT NOT NULL
-        )
-        """
-    )
-    return conn
+    # Schema (flood_reports + subscribers + alerts_sent) lives in
+    # Utils.alert_store so the API, the app and the alerting script share
+    # exactly one definition.
+    return alert_store.get_conn(REPORTS_DB_PATH)
 
 
 class FloodReport(BaseModel):
@@ -358,9 +347,39 @@ def create_report_sms(
 
 @app.get("/reports")
 def list_reports(limit: int = Query(default=100, ge=1, le=1000)) -> dict:
-    with _reports_db() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM flood_reports ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
-    return {"n": len(rows), "reports": [dict(r) for r in rows]}
+    rows = alert_store.list_reports(limit=limit, db_path=REPORTS_DB_PATH)
+    return {"n": len(rows), "reports": rows}
+
+
+class Subscriber(BaseModel):
+    """SMS alert subscription for one ward or whole county."""
+
+    phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
+    ward_or_county: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/subscribers", status_code=201)
+def create_subscriber(sub: Subscriber) -> dict:
+    # Idempotent on (phone, ward_or_county): re-subscribing reactivates.
+    sub_id, _created = alert_store.add_subscriber(
+        sub.phone, sub.ward_or_county, db_path=REPORTS_DB_PATH
+    )
+    return {"id": sub_id, "status": "active"}
+
+
+@app.delete("/subscribers")
+def delete_subscriber(phone: str, ward_or_county: str) -> dict:
+    n = alert_store.unsubscribe(phone, ward_or_county, db_path=REPORTS_DB_PATH)
+    if n == 0:
+        raise HTTPException(status_code=404, detail="No such subscription")
+    return {"status": "deactivated"}
+
+
+@app.get("/alerts")
+def list_alert_history(limit: int = Query(default=200, ge=1, le=1000)) -> dict:
+    """The alert audit log. Phone numbers are masked - they only ever leave
+    the system through the SMS send path itself."""
+    rows = alert_store.list_alerts(limit=limit, db_path=REPORTS_DB_PATH)
+    for r in rows:
+        r["phone"] = alert_store.mask_phone(r["phone"])
+    return {"n": len(rows), "alerts": rows}

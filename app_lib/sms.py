@@ -1,28 +1,75 @@
-"""SMS early-warning sidebar panel (Africa's Talking)."""
+"""SMS early-warning sidebar panel (Africa's Talking) + alert opt-in form."""
 
 from __future__ import annotations
 
 import streamlit as st
 
 from app_lib.config import get_secret
+from Utils import alert_store
+from Utils.sms_sender import AT_AVAILABLE, SmsConfigError, send_sms
 
-try:
-    import africastalking
 
-    AT_AVAILABLE = True
-except ImportError:
-    AT_AVAILABLE = False
+def render_subscribe_panel(df) -> None:
+    """Opt-in form: 'Get SMS alerts for your ward'. Writes to the shared
+    subscribers table (same SQLite store the API exposes via
+    POST /subscribers for external integrations)."""
+    with st.expander("📳 Get SMS alerts for your ward", expanded=False):
+        counties = sorted(df["county"].unique())
+        scope = st.radio(
+            "Alert scope",
+            ["A specific ward", "A whole county"],
+            horizontal=True,
+            key="subscribe_scope",
+        )
+        if scope == "A specific ward":
+            default_idx = 0
+            county = st.selectbox(
+                "County", counties,
+                index=counties.index("Nairobi") if "Nairobi" in counties else 0,
+                key="subscribe_county",
+            )
+            ward_choices = sorted(df[df["county"] == county]["ward"].unique())
+            target = st.selectbox("Ward", ward_choices, index=default_idx,
+                                  key="subscribe_ward")
+        else:
+            target = st.selectbox(
+                "County", counties,
+                index=counties.index("Nairobi") if "Nairobi" in counties else 0,
+                key="subscribe_county_wide",
+            )
+        phone = st.text_input(
+            "Phone number (E.164, e.g. +254712345678)", key="subscribe_phone"
+        )
+        if st.button("Subscribe", use_container_width=True):
+            try:
+                alert_store.add_subscriber(phone, target)
+                st.success(
+                    f"Subscribed {alert_store.mask_phone(phone)} to alerts for "
+                    f"**{target}**. You'll be SMS'd when its flood risk newly "
+                    "crosses the alert threshold."
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+        n_active = len(alert_store.list_subscribers())
+        st.caption(
+            f"{n_active} active subscription(s). Alerts are sent automatically "
+            "by the scheduled cache refresh when a ward's risk newly crosses "
+            "the threshold - never repeatedly while it stays high."
+        )
 
 
 def render_sms_panel(df, nairobi, threshold) -> None:
     st.markdown("### 🔔 SMS Early Warning")
+    render_subscribe_panel(df)
 
-    with st.expander("Send flood alert via SMS", expanded=False):
+    with st.expander("Send flood alert via SMS (manual)", expanded=False):
         if not AT_AVAILABLE:
             st.error(
                 "africastalking not installed.\n\n" "Run: `pip install africastalking`"
             )
             return
+
+        import africastalking
 
         if st.button("💰 Check AT account balance"):
             try:
@@ -126,28 +173,13 @@ def render_sms_panel(df, nairobi, threshold) -> None:
             use_container_width=True,
         ):
             try:
-                at_username = get_secret("AT_USERNAME", "NgundoMuithya")
-                at_api_key = get_secret("AT_API_KEY")
-                if not at_api_key:
-                    raise KeyError("AT_API_KEY")
-
-                africastalking.initialize(
-                    username=at_username,
-                    api_key=at_api_key,
+                result = send_sms(
+                    sms_body,
+                    recipient_list,
+                    username=get_secret("AT_USERNAME", "NgundoMuithya"),
+                    api_key=get_secret("AT_API_KEY"),
                 )
-                sms = africastalking.SMS
-
-                # Africa's Talking accepts a list of E.164 numbers
-                response = sms.send(
-                    message=sms_body,
-                    recipients=recipient_list,
-                    # sender_id="FloodGuard",  # uncomment once AT approves
-                )
-
-                # Parse the response to show per-number status
-                results = response.get("SMSMessageData", {}).get("Recipients", [])
-                success = [r for r in results if r.get("status") == "Success"]
-                failed = [r for r in results if r.get("status") != "Success"]
+                success, failed = result["sent"], result["failed"]
 
                 if success:
                     st.success(f"✅ Sent to {len(success)} recipient(s).")
@@ -160,7 +192,7 @@ def render_sms_panel(df, nairobi, threshold) -> None:
                         )
                     )
                     with st.expander("Raw AT response (debug)"):
-                        st.json(response)
+                        st.json(result["raw"])
 
                 # Log to session state so operator can review sends.
                 # Trimmed to the last 5 - that's all the UI ever shows,
@@ -177,7 +209,7 @@ def render_sms_panel(df, nairobi, threshold) -> None:
                 )
                 st.session_state.sms_log = st.session_state.sms_log[-5:]
 
-            except KeyError:
+            except SmsConfigError:
                 st.error(
                     "AT_API_KEY not found in Streamlit secrets.\n\n"
                     "Add it to `.streamlit/secrets.toml`:\n"

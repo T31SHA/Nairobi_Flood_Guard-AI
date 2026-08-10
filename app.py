@@ -32,6 +32,7 @@ pages = [
     st.Page("app_pages/dashboard.py", title="Flood Risk Dashboard", default=True),
     st.Page("app_pages/ward_lookup.py", title="Ward Lookup"),
     st.Page("app_pages/route_optimization.py", title="Route Optimization"),
+    st.Page("app_pages/alerts.py", title="Alert History"),
     st.Page("app_pages/ai_assistant.py", title="AI Assistant"),
 ]
 nav = st.navigation(pages)

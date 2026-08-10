@@ -121,3 +121,46 @@ def test_reroutes_gtfs_rt_returns_parseable_protobuf(client, monkeypatch):
     rel = gtfs_realtime_pb2.TripUpdate.StopTimeUpdate
     assert updates[0].schedule_relationship == rel.SCHEDULED
     assert updates[1].schedule_relationship == rel.SKIPPED  # s2 is affected
+
+
+def test_subscribe_and_unsubscribe(client):
+    resp = client.post(
+        "/subscribers", json={"phone": "+254712345678", "ward_or_county": "Kibera"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "active"
+
+    # Invalid phone numbers are rejected like FloodReport field validation.
+    assert (
+        client.post(
+            "/subscribers", json={"phone": "0712", "ward_or_county": "Kibera"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.delete(
+            "/subscribers",
+            params={"phone": "+254712345678", "ward_or_county": "Kibera"},
+        ).json()["status"]
+        == "deactivated"
+    )
+    assert (
+        client.delete(
+            "/subscribers",
+            params={"phone": "+254700000000", "ward_or_county": "Nowhere"},
+        ).status_code
+        == 404
+    )
+
+
+def test_alerts_audit_log_masks_phones(client):
+    from Utils import alert_store
+
+    alert_store.log_alert(
+        "Kibera", "+254712345678", "FLOOD ALERT: ...", "sent",
+        db_path=api_main.REPORTS_DB_PATH,
+    )
+    body = client.get("/alerts").json()
+    assert body["n"] == 1
+    assert body["alerts"][0]["phone"] == "+254****5678"
+    assert body["alerts"][0]["ward"] == "Kibera"
