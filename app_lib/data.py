@@ -21,6 +21,7 @@ from app_lib.config import (
     FLOODS_GPKG,
     GTFS_DIR,
     MODEL_COMPARISON_CSV,
+    PRECOMPUTED_REROUTES,
     REROUTING_CSV,
     ROAD_GRAPH,
     ROUTE_GEOMETRIES,
@@ -126,6 +127,21 @@ def load_route_geometries():
         return {}
     with open(ROUTE_GEOMETRIES) as f:
         return json.load(f)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_precomputed_reroutes():
+    """The latest scheduled-refresh payload (cache/precomputed_reroutes.json)
+    written by scripts/refresh_cache.py, or None when absent/stale. Lets the
+    dashboard quote rerouting impact numbers without paying the graph-load
+    cost on every rerun."""
+    if not PRECOMPUTED_REROUTES.exists():
+        return None
+    try:
+        with open(PRECOMPUTED_REROUTES, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def generate_predictions(model, df):

@@ -25,6 +25,7 @@ from app_lib.maps import (
 )
 from app_lib.state import get_state
 from app_lib.theme import PLOTLY_LAYOUT
+from Utils.gtfs_rt import GTFS_RT_AVAILABLE, build_gtfs_rt_feed
 from Utils.live_routing import find_stop_preserving_route, select_option
 
 state = get_state()
@@ -66,9 +67,11 @@ mode_label = (
 
 if use_open_meteo:
     if not OSMNX_AVAILABLE:
-        st.warning(
+        # Expected-and-handled on minimal installs, not a failure: the page
+        # falls back to the historical rerouting results by design.
+        st.info(
             "osmnx isn't installed, so recomputed rerouting isn't "
-            "available here. Falling back to the historical (Apr 2024) "
+            "available here. Showing the historical (Apr 2024) "
             "rerouting results below. Install with `pip install osmnx`."
         )
     else:
@@ -100,9 +103,11 @@ if use_open_meteo:
                 routing_source = "live"
                 routing_meta["mode_label"] = mode_label
             except Exception as exc:
+                # Genuinely unexpected (e.g. corrupt graph file) - keep this
+                # a warning, but make clear the page still has full results.
                 st.warning(
-                    f"Recomputing {mode_label} routing failed ({exc}). "
-                    "Falling back to historical results."
+                    f"Could not recompute {mode_label} routing ({exc}). "
+                    "Showing the historical (Apr 2024) results below."
                 )
 
 if routing_source == "historical":
@@ -208,12 +213,36 @@ display_df = (
 display_df.index += 1
 display_df.columns = list(display_cols.values())
 st.dataframe(display_df, width="stretch")
-st.download_button(
-    label="⬇ Download All Options CSV",
-    data=options_df.to_csv(index=False),
-    file_name="rerouting_options.csv",
-    mime="text/csv",
-)
+dl_csv, dl_gtfs = st.columns(2)
+with dl_csv:
+    st.download_button(
+        label="⬇ Download All Options CSV",
+        data=options_df.to_csv(index=False),
+        file_name="rerouting_options.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+with dl_gtfs:
+    if GTFS_RT_AVAILABLE:
+        # The same option set as a GTFS-Realtime feed: one ADDED TripUpdate
+        # per trip of each affected route, stops in high-risk wards SKIPPED.
+        affected_stop_ids = get_affected_stop_ids(nairobi, stops, threshold)
+        st.download_button(
+            label="⬇ Download GTFS-RT Feed",
+            data=build_gtfs_rt_feed(options_df, trips, stop_times, affected_stop_ids),
+            file_name="flood_rerouting_feed.pb",
+            mime="application/x-protobuf",
+            width="stretch",
+            help=(
+                "GTFS-Realtime v2.0 protobuf feed of the current rerouting "
+                "options - immediately consumable by existing transit "
+                "infrastructure. Also served live at /reroutes/gtfs-rt."
+            ),
+        )
+    else:
+        st.caption(
+            "GTFS-RT download unavailable: `pip install gtfs-realtime-bindings`."
+        )
 
 # Tradeoff chart
 st.markdown(

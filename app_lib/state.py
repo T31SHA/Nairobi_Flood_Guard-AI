@@ -20,6 +20,50 @@ from app_lib.sms import render_sms_panel
 from Utils.rainfall_fetcher import rainfall_summary
 
 _STATE_KEY = "flood_guard_state"
+SIM_KEY = "simulated_risk"  # {ward_name: probability} - in-memory only, never persisted
+
+
+def render_simulator_panel(df) -> None:
+    """'Simulate Scenario': dial up flood risk for a chosen ward and watch
+    every page react (map, metrics, rerouting). Overrides model output purely
+    in memory - never touches Data/floods.gpkg or the trained model."""
+    with st.sidebar.expander("🧪 Simulate Scenario", expanded=False):
+        st.caption(
+            "Presenter tool: force one ward's flood probability and watch the "
+            "map, metrics and rerouting react. In-memory only - nothing is "
+            "written to data files or the model, and no SMS is sent."
+        )
+        nairobi_wards = sorted(
+            df[df["county"].str.lower() == "nairobi"]["ward"].unique()
+        )
+        ward = st.selectbox("Ward to simulate", nairobi_wards, key="sim_ward")
+        current = float(df.loc[df["ward"] == ward, "flood_prob"].iloc[0])
+        prob = st.slider(
+            "Simulated flood probability",
+            min_value=0.0,
+            max_value=1.0,
+            value=max(0.8, round(current, 2)),
+            step=0.05,
+            key="sim_prob",
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Apply", use_container_width=True, key="sim_apply"):
+                st.session_state[SIM_KEY] = {ward: prob}
+        with c2:
+            if st.button("Clear", use_container_width=True, key="sim_clear"):
+                st.session_state.pop(SIM_KEY, None)
+
+
+def apply_simulation(df) -> dict | None:
+    """Overlay the simulated probabilities onto the scored frame. Returns the
+    active simulation dict (or None)."""
+    sim = st.session_state.get(SIM_KEY)
+    if not sim:
+        return None
+    for ward, prob in sim.items():
+        df.loc[df["ward"] == ward, "flood_prob"] = prob
+    return sim
 
 
 def get_state() -> dict:
@@ -116,6 +160,12 @@ def build_shared_state() -> dict:
         df = base_df.copy()
 
     df = add_risk_columns(model, df)
+    render_simulator_panel(df)
+    sim = apply_simulation(df)
+    if sim:
+        from app_lib.theme import risk_label
+
+        df["risk_label"], _ = zip(*df["flood_prob"].map(risk_label))
     nairobi = df[df["county"].str.lower() == "nairobi"].copy()
 
     n_critical = (df["flood_prob"] >= 0.70).sum()
@@ -159,9 +209,18 @@ def build_shared_state() -> dict:
         "use_live": use_live,
         "forecast_horizon_hours": forecast_horizon_hours,
         "rainfall_meta": rainfall_meta,
+        "simulation": sim,
         "n_critical": int(n_critical),
         "n_high": int(n_high),
         "n_total": int(n_total),
     }
     st.session_state[_STATE_KEY] = state
+    if sim:
+        for ward, prob in sim.items():
+            st.warning(
+                f"SIMULATION ACTIVE: **{ward}** forced to {prob:.0%} flood "
+                "probability. Map, metrics and rerouting react; nothing is "
+                "persisted and no SMS is sent. Clear it from the sidebar's "
+                "'Simulate Scenario' panel."
+            )
     return state

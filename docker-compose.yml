@@ -1,0 +1,36 @@
+# One-command proof of "runs on existing infrastructure, no new hardware":
+#
+#   docker compose up
+#
+# brings up both services against the baked-in data assets:
+#   api  -> http://localhost:8000  (FastAPI; /docs for the OpenAPI UI)
+#   app  -> http://localhost:8501  (Streamlit dashboard)
+#
+# Secrets are optional and flow through the environment when present
+# (GROQ_API_KEY, AT_API_KEY, AT_USERNAME, VISUALCROSSING_API_KEY); every
+# feature that needs them degrades gracefully without them.
+
+services:
+  api:
+    build: .
+    command: ["api"]
+    ports:
+      - "8000:8000"
+    environment:
+      - AT_USERNAME=${AT_USERNAME:-}
+      - AT_API_KEY=${AT_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - VISUALCROSSING_API_KEY=${VISUALCROSSING_API_KEY:-}
+
+  app:
+    build: .
+    command: ["app"]
+    ports:
+      - "8501:8501"
+    environment:
+      - AT_USERNAME=${AT_USERNAME:-}
+      - AT_API_KEY=${AT_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - VISUALCROSSING_API_KEY=${VISUALCROSSING_API_KEY:-}
+    depends_on:
+      - api

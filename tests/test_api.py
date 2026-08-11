@@ -78,3 +78,89 @@ def test_report_validation(client):
 
 def test_reroutes_invalid_preference(client):
     assert client.get("/reroutes", params={"preference": "yolo"}).status_code == 422
+
+
+def _stub_reroutes_payload(monkeypatch):
+    """Synthetic rerouting payload + GTFS tables so /reroutes/gtfs-rt can be
+    exercised without the ~100MB road network."""
+    import pandas as pd
+
+    payload = {
+        "generated_at": "2026-01-01T00:00:00+00:00",
+        "generated_at_unix": 1_767_225_600.0,
+        "threshold": 0.3,
+        "meta": {},
+        "options": [{"route_id": "R1", "option": "balanced"}],
+        "affected_stop_ids": ["s2"],
+    }
+    tables = {
+        "stops": pd.DataFrame({"stop_id": ["s1", "s2"]}),
+        "trips": pd.DataFrame({"route_id": ["R1"], "trip_id": ["T1"]}),
+        "stop_times": pd.DataFrame(
+            {"trip_id": ["T1", "T1"], "stop_id": ["s1", "s2"], "stop_sequence": [1, 2]}
+        ),
+    }
+    monkeypatch.setattr(api_main, "_reroutes_payload", lambda thr: payload)
+    monkeypatch.setattr(api_main, "_gtfs_tables", lambda: tables)
+
+
+def test_reroutes_gtfs_rt_returns_parseable_protobuf(client, monkeypatch):
+    from google.transit import gtfs_realtime_pb2
+
+    _stub_reroutes_payload(monkeypatch)
+    resp = client.get("/reroutes/gtfs-rt")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/x-protobuf")
+
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(resp.content)
+    assert len(feed.entity) == 1
+    trip_update = feed.entity[0].trip_update
+    assert trip_update.trip.trip_id == "T1"
+    updates = list(trip_update.stop_time_update)
+    rel = gtfs_realtime_pb2.TripUpdate.StopTimeUpdate
+    assert updates[0].schedule_relationship == rel.SCHEDULED
+    assert updates[1].schedule_relationship == rel.SKIPPED  # s2 is affected
+
+
+def test_subscribe_and_unsubscribe(client):
+    resp = client.post(
+        "/subscribers", json={"phone": "+254712345678", "ward_or_county": "Kibera"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "active"
+
+    # Invalid phone numbers are rejected like FloodReport field validation.
+    assert (
+        client.post(
+            "/subscribers", json={"phone": "0712", "ward_or_county": "Kibera"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.delete(
+            "/subscribers",
+            params={"phone": "+254712345678", "ward_or_county": "Kibera"},
+        ).json()["status"]
+        == "deactivated"
+    )
+    assert (
+        client.delete(
+            "/subscribers",
+            params={"phone": "+254700000000", "ward_or_county": "Nowhere"},
+        ).status_code
+        == 404
+    )
+
+
+def test_alerts_audit_log_masks_phones(client):
+    from Utils import alert_store
+
+    alert_store.log_alert(
+        "Kibera", "+254712345678", "FLOOD ALERT: ...", "sent",
+        db_path=api_main.REPORTS_DB_PATH,
+    )
+    body = client.get("/alerts").json()
+    assert body["n"] == 1
+    assert body["alerts"][0]["phone"] == "+254****5678"
+    assert body["alerts"][0]["ward"] == "Kibera"
