@@ -10,6 +10,7 @@ from app_lib.data import load_gtfs, load_precomputed_reroutes
 from app_lib.maps import build_choropleth
 from app_lib.state import get_state
 from app_lib.theme import PLOTLY_LAYOUT
+from Utils.kmd_fetcher import fetch_kmd_advisory
 from Utils.live_routing import compute_affected_routes, select_option
 from Utils.rainfall_fetcher import rainfall_summary
 
@@ -96,6 +97,25 @@ if state["use_open_meteo"]:
         "Terrain features remain static (SRTM). "
         "Switch rainfall source in the sidebar to compare live, historical, "
         "24hr, and 48hr flood-risk maps."
+    )
+
+# -- Official KMD advisory (complement, not compete) -------------------------
+
+kmd = fetch_kmd_advisory()
+with st.expander("Official KMD Advisory (Kenya Meteorological Department)", expanded=False):
+    st.markdown(
+        f"**{kmd['title']}**  \n"
+        f"{kmd['summary']}  \n"
+        f"Source: {kmd['source']} · fetched {kmd['fetched_at'][:16].replace('T', ' ')} UTC"
+    )
+    st.markdown(
+        f"- [Weather warnings]({kmd['urls']['weather_warnings']})  \n"
+        f"- [Daily Flood Bulletin]({kmd['urls']['flood_bulletin']})"
+    )
+    st.caption(
+        "Nairobi Flood Guard complements KMD's national forecasting — it does "
+        "not replace official advisories. When KMD publishes a machine-readable "
+        "CAP feed at a stable URL, this panel will ingest it automatically."
     )
 
 st.markdown(

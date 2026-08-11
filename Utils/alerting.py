@@ -7,14 +7,13 @@ Flow (driven by ``scripts/refresh_cache.py`` on its schedule):
     -> wards that NEWLY crossed from below-threshold to at-or-above-threshold
        (or escalated into the critical band while already above threshold)
     -> active subscribers for those wards / their counties
-    -> send SMS via Utils.sms_sender.send_sms
+    -> build CAP-shaped Alert objects (Utils.alerts)
+    -> send via SMS/WhatsApp through Utils.sms_sender
     -> log every decision into the alerts_sent table
 
 Idempotency: only a genuine *new* crossing fires (never a ward that stays
 above threshold across runs), and the snapshot is updated even when sending
 is impossible (no credentials), so a crossing is never re-alerted later.
-The first run against an empty snapshot establishes the baseline without
-alerting - pass ``alert_on_baseline=True`` to override (e.g. in a demo).
 """
 
 from __future__ import annotations
@@ -26,8 +25,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from Utils import alert_store
-from Utils.sms_sender import SmsConfigError, send_sms
+from Utils import alert_queue, alert_store
+from Utils.alerts import Alert, Language, build_alert
+from Utils.sms_sender import SmsConfigError, send_sms, send_whatsapp
 
 BASE = Path(__file__).resolve().parent.parent
 SNAPSHOT_PATH = BASE / "cache" / "last_scored.json"
@@ -57,8 +57,6 @@ def load_snapshot(path: Path | str = SNAPSHOT_PATH) -> dict:
 
 
 def save_snapshot(scored: pd.DataFrame, threshold: float, path=SNAPSHOT_PATH) -> None:
-    """Atomic write (tmp + rename) so a crashed run can't leave a half-written
-    snapshot that would either re-fire or swallow crossings."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -80,15 +78,6 @@ def find_threshold_crossings(
     threshold: float,
     critical: float = CRITICAL_PROB,
 ) -> list[Crossing]:
-    """Wards that newly crossed upward since the previous snapshot.
-
-    - ``new``: prev < threshold <= curr
-    - ``escalation``: already above threshold, but crossed into the critical
-      band (>= ``critical``) since the previous run
-
-    Compares both sides against the *current* threshold, so a threshold
-    change can't retroactively manufacture or hide crossings.
-    """
     prev_wards = prev.get("wards", {})
     crossings = []
     for row in scored.itertuples():
@@ -97,14 +86,12 @@ def find_threshold_crossings(
         prev_entry = prev_wards.get(key)
         prev_prob = float(prev_entry["prob"]) if prev_entry else None
         if prev_prob is None:
-            continue  # no baseline for this ward - never alert blind
+            continue
         if prev_prob < threshold <= curr:
             crossings.append(
                 Crossing(row.ward, row.county, prev_prob, curr, "new")
             )
-        elif (
-            threshold <= prev_prob < critical <= curr
-        ):
+        elif threshold <= prev_prob < critical <= curr:
             crossings.append(
                 Crossing(row.ward, row.county, prev_prob, curr, "escalation")
             )
@@ -114,8 +101,6 @@ def find_threshold_crossings(
 def match_subscribers(
     crossings: list[Crossing], subscribers: list[dict]
 ) -> list[tuple[dict, Crossing]]:
-    """A subscriber matches a crossing on their ward OR their whole-county
-    subscription (case-insensitive)."""
     pairs = []
     for sub in subscribers:
         target = sub["ward_or_county"].strip().lower()
@@ -126,8 +111,6 @@ def match_subscribers(
 
 
 def _baseline_crossings(scored: pd.DataFrame, threshold: float) -> list[Crossing]:
-    """First-run crossings for --alert-on-baseline: every ward currently at
-    or above threshold, with no previous probability to quote."""
     return [
         Crossing(row.ward, row.county, None, float(row.flood_prob), "new")
         for row in scored.itertuples()
@@ -135,23 +118,57 @@ def _baseline_crossings(scored: pd.DataFrame, threshold: float) -> list[Crossing
     ]
 
 
+def crossing_to_alert(
+    crossing: Crossing,
+    threshold: float,
+    language: Language = "en",
+    horizon_hours: int = 0,
+) -> Alert:
+    return build_alert(
+        crossing.ward,
+        crossing.county,
+        crossing.curr_prob,
+        threshold,
+        prev_prob=crossing.prev_prob,
+        kind=crossing.kind,
+        horizon_hours=horizon_hours,
+        language=language,
+    )
+
+
 def build_alert_message(crossing: Crossing, threshold: float) -> str:
-    if crossing.kind == "escalation":
-        return (
-            f"FLOOD ALERT (CRITICAL): {crossing.ward} ({crossing.county}) flood "
-            f"risk has escalated to {crossing.curr_prob:.0%} - in the critical "
-            f"band. Avoid low-lying areas & flooded routes. "
-            f"- Nairobi Flood Guard"
-        )
-    was = (
-        f" (was {crossing.prev_prob:.0%})" if crossing.prev_prob is not None else ""
-    )
-    return (
-        f"FLOOD ALERT: {crossing.ward} ({crossing.county}) flood risk is now "
-        f"{crossing.curr_prob:.0%}, above the {threshold:.0%} early-warning "
-        f"threshold{was}. Avoid low-lying areas & "
-        f"flooded routes. - Nairobi Flood Guard"
-    )
+    """Backward-compatible SMS text (English)."""
+    return crossing_to_alert(crossing, threshold).to_sms("en")
+
+
+def dispatch_alert(
+    alert: Alert,
+    phone: str,
+    *,
+    channel: str = "sms",
+    username: str | None = None,
+    api_key: str | None = None,
+    queue_on_failure: bool = True,
+    db_path=None,
+) -> bool:
+    """Send one alert on the requested channel. Returns True on success."""
+    lang: Language = alert.language
+    message = alert.to_sms(lang)
+    try:
+        if channel == "whatsapp":
+            result = send_whatsapp(
+                message, [phone], username=username, api_key=api_key
+            )
+        else:
+            result = send_sms(message, [phone], username=username, api_key=api_key)
+        ok = phone in result["sent"] or not result["failed"]
+        if not ok and queue_on_failure:
+            alert_queue.enqueue(phone, channel, alert, db_path=db_path)
+        return ok
+    except (SmsConfigError, Exception):
+        if queue_on_failure:
+            alert_queue.enqueue(phone, channel, alert, db_path=db_path)
+        raise
 
 
 def process_alerts(
@@ -160,17 +177,14 @@ def process_alerts(
     snapshot_path=SNAPSHOT_PATH,
     db_path=None,
     alert_on_baseline: bool = False,
-    sender=send_sms,
     username: str | None = None,
     api_key: str | None = None,
+    channels: tuple[str, ...] = ("sms",),
+    horizon_hours: int = 0,
+    dispatch=None,
 ) -> dict:
-    """Diff -> notify -> log -> snapshot. Returns a run summary.
-
-    ``scored`` needs ``ward``, ``county`` and ``flood_prob`` columns.
-    ``sender`` is injectable for tests; the default hits Africa's Talking.
-    The snapshot is always advanced, even when sending is impossible, so a
-    crossing handled once is never re-alerted.
-    """
+    """Diff -> notify -> log -> snapshot. Returns a run summary."""
+    send_fn = dispatch or dispatch_alert
     prev = load_snapshot(snapshot_path)
     is_baseline = not prev.get("wards")
 
@@ -182,37 +196,76 @@ def process_alerts(
     subscribers = alert_store.list_subscribers(active_only=True, db_path=db_path)
     pairs = match_subscribers(crossings, subscribers)
 
-    summary = {"crossings": crossings, "sent": 0, "failed": 0, "skipped": 0}
+    summary = {"crossings": crossings, "sent": 0, "failed": 0, "skipped": 0, "queued": 0}
 
     with alert_store.get_conn(db_path) as conn:
         for crossing in crossings:
-            message = build_alert_message(crossing, threshold)
             targets = [sub for sub, c in pairs if c is crossing]
             if not targets:
-                # A crossing nobody subscribed to: still audit-worthy.
+                alert = crossing_to_alert(crossing, threshold)
                 alert_store.log_alert(
-                    crossing.ward, None, message, "no_subscribers", conn=conn
+                    crossing.ward,
+                    None,
+                    alert.to_sms("en"),
+                    "no_subscribers",
+                    conn=conn,
+                    severity=alert.severity.value,
+                    alert_id=alert.identifier,
                 )
                 summary["skipped"] += 1
                 continue
             for sub in targets:
-                phone = sub["phone"]
-                try:
-                    result = sender(
-                        message, [phone], username=username, api_key=api_key
-                    )
-                    ok = phone in result["sent"] or not result["failed"]
-                    status = "sent" if ok else "failed"
-                except SmsConfigError:
-                    status = "no_credentials"
-                except Exception:
-                    status = "failed"
-                alert_store.log_alert(
-                    crossing.ward, phone, message, status, conn=conn
+                lang: Language = sub.get("language", "en") or "en"
+                alert = crossing_to_alert(
+                    crossing, threshold, language=lang, horizon_hours=horizon_hours
                 )
-                summary["sent" if status == "sent" else
-                        "skipped" if status == "no_credentials" else
-                        "failed"] += 1
+                phone = sub["phone"]
+                for channel in channels:
+                    message = alert.to_sms(lang)
+                    try:
+                        ok = send_fn(
+                            alert,
+                            phone,
+                            channel=channel,
+                            username=username,
+                            api_key=api_key,
+                            queue_on_failure=dispatch is None,
+                            db_path=db_path,
+                        )
+                        status = "sent" if ok else "failed"
+                    except SmsConfigError:
+                        status = "no_credentials"
+                        alert_queue.enqueue(phone, channel, alert, db_path=db_path, conn=conn)
+                        summary["queued"] += 1
+                    except Exception:
+                        status = "failed"
+                        summary["queued"] += 1
+                    alert_store.log_alert(
+                        crossing.ward,
+                        phone,
+                        message,
+                        status,
+                        conn=conn,
+                        channel=channel,
+                        severity=alert.severity.value,
+                        alert_id=alert.identifier,
+                    )
+                    if status == "sent":
+                        summary["sent"] += 1
+                    elif status == "no_credentials":
+                        summary["skipped"] += 1
+                    else:
+                        summary["failed"] += 1
 
     save_snapshot(scored, threshold, snapshot_path)
+
+    if api_key:
+        retry = alert_queue.process_pending(
+            dispatch_alert,
+            db_path=db_path,
+            username=username,
+            api_key=api_key,
+        )
+        summary["retry"] = retry
+
     return summary

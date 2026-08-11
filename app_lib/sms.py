@@ -40,9 +40,15 @@ def render_subscribe_panel(df) -> None:
         phone = st.text_input(
             "Phone number (E.164, e.g. +254712345678)", key="subscribe_phone"
         )
+        language = st.selectbox(
+            "Alert language",
+            ["English", "Kiswahili"],
+            key="subscribe_language",
+        )
+        lang_code = "sw" if language == "Kiswahili" else "en"
         if st.button("Subscribe", use_container_width=True):
             try:
-                alert_store.add_subscriber(phone, target)
+                alert_store.add_subscriber(phone, target, language=lang_code)
                 st.success(
                     f"Subscribed {alert_store.mask_phone(phone)} to alerts for "
                     f"**{target}**. You'll be SMS'd when its flood risk newly "

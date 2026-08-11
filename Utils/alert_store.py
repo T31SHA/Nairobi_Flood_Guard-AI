@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS subscribers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     phone TEXT NOT NULL,
     ward_or_county TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT 'en',
     created_at TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
     UNIQUE (phone, ward_or_county)
@@ -53,7 +54,10 @@ CREATE TABLE IF NOT EXISTS alerts_sent (
     ward TEXT,
     phone TEXT,
     message TEXT NOT NULL,
-    status TEXT NOT NULL
+    status TEXT NOT NULL,
+    channel TEXT DEFAULT 'sms',
+    severity TEXT,
+    alert_id TEXT
 );
 """
 
@@ -63,7 +67,25 @@ def get_conn(db_path: Path | str | None = None) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive migrations for existing databases."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(subscribers)")}
+    if "language" not in cols:
+        conn.execute(
+            "ALTER TABLE subscribers ADD COLUMN language TEXT NOT NULL DEFAULT 'en'"
+        )
+    acols = {row[1] for row in conn.execute("PRAGMA table_info(alerts_sent)")}
+    if "channel" not in acols:
+        conn.execute("ALTER TABLE alerts_sent ADD COLUMN channel TEXT DEFAULT 'sms'")
+    if "severity" not in acols:
+        conn.execute("ALTER TABLE alerts_sent ADD COLUMN severity TEXT")
+    if "alert_id" not in acols:
+        conn.execute("ALTER TABLE alerts_sent ADD COLUMN alert_id TEXT")
+    conn.commit()
 
 
 def valid_phone(phone: str) -> bool:
@@ -80,7 +102,10 @@ def mask_phone(phone: str | None) -> str:
 
 
 def add_subscriber(
-    phone: str, ward_or_county: str, db_path: Path | str | None = None
+    phone: str,
+    ward_or_county: str,
+    db_path: Path | str | None = None,
+    language: str = "en",
 ) -> tuple[int, bool]:
     """Insert (or reactivate) a subscription. Returns (row id, newly created).
 
@@ -93,12 +118,14 @@ def add_subscriber(
         raise ValueError(f"Invalid phone number {phone!r}: expected E.164 (+...)")
     if not ward_or_county:
         raise ValueError("ward_or_county must not be empty")
+    if language not in ("en", "sw"):
+        raise ValueError(f"language must be 'en' or 'sw', got {language!r}")
     with get_conn(db_path) as conn:
         conn.execute(
-            "INSERT INTO subscribers (phone, ward_or_county, created_at, active) "
-            "VALUES (?, ?, ?, 1) "
-            "ON CONFLICT (phone, ward_or_county) DO UPDATE SET active = 1",
-            (phone, ward_or_county, datetime.now(UTC).isoformat()),
+            "INSERT INTO subscribers (phone, ward_or_county, language, created_at, active) "
+            "VALUES (?, ?, ?, ?, 1) "
+            "ON CONFLICT (phone, ward_or_county) DO UPDATE SET active = 1, language = excluded.language",
+            (phone, ward_or_county, language, datetime.now(UTC).isoformat()),
         )
         row = conn.execute(
             "SELECT id FROM subscribers WHERE phone = ? AND ward_or_county = ?",
@@ -119,7 +146,10 @@ def unsubscribe(phone: str, ward_or_county: str, db_path=None) -> int:
 
 
 def list_subscribers(active_only: bool = True, db_path=None) -> list[dict]:
-    query = "SELECT id, phone, ward_or_county, created_at, active FROM subscribers"
+    query = (
+        "SELECT id, phone, ward_or_county, language, created_at, active "
+        "FROM subscribers"
+    )
     if active_only:
         query += " WHERE active = 1"
     query += " ORDER BY id DESC"
@@ -135,6 +165,9 @@ def log_alert(
     status: str,
     db_path=None,
     conn: sqlite3.Connection | None = None,
+    channel: str = "sms",
+    severity: str | None = None,
+    alert_id: str | None = None,
 ) -> None:
     """One row per alert decision: 'sent', 'failed', 'no_credentials' or
     'no_subscribers' (a crossing with nobody to notify - still worth an
@@ -143,9 +176,19 @@ def log_alert(
     conn = conn or get_conn(db_path)
     try:
         conn.execute(
-            "INSERT INTO alerts_sent (timestamp, ward, phone, message, status) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (datetime.now(UTC).isoformat(), ward, phone, message, status),
+            "INSERT INTO alerts_sent "
+            "(timestamp, ward, phone, message, status, channel, severity, alert_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                datetime.now(UTC).isoformat(),
+                ward,
+                phone,
+                message,
+                status,
+                channel,
+                severity,
+                alert_id,
+            ),
         )
         if own_conn:
             conn.commit()

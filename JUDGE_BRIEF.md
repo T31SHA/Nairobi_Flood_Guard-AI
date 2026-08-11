@@ -80,3 +80,28 @@ clearly labeled, persists nothing, and never sends an SMS.
 - The LICENSE is MIT ("Nairobi Flood Guard AI Contributors") — the
   conventional default for a public hackathon repo; override if the team
   prefers otherwise.
+
+## EW4All upgrade (second pass — early warning system, not just a model)
+
+**Out-of-time March 2026 validation** (`scripts/validate_against_2026_event.py`):
+source-cited ground truth from Ushahidi, Interior Ministry lists, and news
+coverage. Honest finding: with static April 2024 rainfall features, only Ruai
+Ward scores above threshold among mappable reported-flooded neighborhoods —
+surfaced on the Model Card page, not spun as a second spatial-CV metric.
+
+**KMD complementarity** (`Utils/kmd_fetcher.py`): dashboard panel links to
+official KMD weather warnings and flood bulletins; no stable machine-readable
+feed verified, so we link out rather than scrape.
+
+**CAP-aligned alerts** (`Utils/alerts.py`): severity/urgency/certainty/
+instruction fields; `GET /alerts/cap/feed`, `/alerts/feed`, `/alerts/feed/rss`.
+Multilingual EN/Swahili templates; subscriber language preference.
+
+**Multi-channel dissemination**: SMS + WhatsApp (Africa's Talking), public
+Live Alerts page, pending-alert retry queue (`Utils/alert_queue.py`).
+
+**Warning performance tracking** (`Utils/alert_verification.py`): POD/FAR-style
+summary on Alert History with small-sample caveat.
+
+**Response protocol** (`RESPONSE_PROTOCOL.md`): who acts at each severity tier;
+complements KMD and Kenya Red Cross, does not claim their endorsement.

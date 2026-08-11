@@ -10,6 +10,7 @@ import streamlit as st
 
 from app_lib.state import get_state
 from Utils import alert_store
+from Utils.alert_verification import compute_verification_stats
 
 state = get_state()
 
@@ -39,6 +40,25 @@ with c3:
 with c4:
     st.metric("Last Alert", alerts[0]["timestamp"][:16].replace("T", " ") + " UTC"
               if alerts else "—")
+
+stats = compute_verification_stats()
+st.markdown(
+    '<div class="section-header" style="margin-top:1rem">Warning performance</div>',
+    unsafe_allow_html=True,
+)
+v1, v2, v3 = st.columns(3)
+with v1:
+    pod = stats["pod"]
+    st.metric("POD (vs field reports)", f"{pod:.0%}" if pod is not None else "—")
+with v2:
+    far = stats["far"]
+    st.metric("FAR (vs field reports)", f"{far:.0%}" if far is not None else "—")
+with v3:
+    st.metric(
+        "2026 retrospective overlap",
+        f"{stats['retro_2026_ward_overlap']}/{stats['retro_2026_ward_total']}",
+    )
+st.caption(stats["caveat"])
 
 if not alerts:
     st.info(

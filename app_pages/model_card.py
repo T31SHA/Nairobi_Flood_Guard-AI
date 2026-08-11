@@ -107,3 +107,22 @@ st.markdown(
     "- Random-split metrics are reported in the registry only to quantify "
     "spatial optimism, never as the headline."
 )
+
+# -- Out-of-time March 2026 sanity check --------------------------------------
+st.markdown("#### Out-of-time check: March 2026 Nairobi floods")
+st.markdown(
+    "A **retrospective sanity check** (not equivalent to spatial-CV metrics): "
+    "did wards reported flooded in the independent March 2026 event score high "
+    "under the registered model with April 2024 training labels and static "
+    "historical rainfall features? Run `python -m scripts.validate_against_2026_event` "
+    "for the full source-cited table."
+)
+st.info(
+    "**Honest finding:** with static April 2024 rainfall features, only "
+    "**Ruai Ward** among the mappable reported-flooded neighborhoods scores "
+    "above the registry threshold (~67%). Mathare, Eastleigh, Dandora, Kayole "
+    "and others score near zero — terrain-only susceptibility without live "
+    "rainfall cannot reproduce a dynamic flash-flood event. This is exactly why "
+    "live rainfall ingestion and KMD advisory fusion matter for timeliness, and "
+    "why we frame this as a sanity check, not a second validation metric."
+)

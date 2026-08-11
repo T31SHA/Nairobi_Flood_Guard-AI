@@ -352,17 +352,18 @@ def list_reports(limit: int = Query(default=100, ge=1, le=1000)) -> dict:
 
 
 class Subscriber(BaseModel):
-    """SMS alert subscription for one ward or whole county."""
+    """SMS/WhatsApp alert subscription for one ward or whole county."""
 
     phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
     ward_or_county: str = Field(min_length=1, max_length=100)
+    language: str = Field(default="en", pattern=r"^(en|sw)$")
 
 
 @app.post("/subscribers", status_code=201)
 def create_subscriber(sub: Subscriber) -> dict:
     # Idempotent on (phone, ward_or_county): re-subscribing reactivates.
     sub_id, _created = alert_store.add_subscriber(
-        sub.phone, sub.ward_or_county, db_path=REPORTS_DB_PATH
+        sub.phone, sub.ward_or_county, db_path=REPORTS_DB_PATH, language=sub.language
     )
     return {"id": sub_id, "status": "active"}
 
@@ -383,3 +384,90 @@ def list_alert_history(limit: int = Query(default=200, ge=1, le=1000)) -> dict:
     for r in rows:
         r["phone"] = alert_store.mask_phone(r["phone"])
     return {"n": len(rows), "alerts": rows}
+
+
+@app.get("/alerts/feed")
+def alerts_feed(limit: int = Query(default=50, ge=1, le=200)) -> dict:
+    """Public JSON feed of recent alerts (no auth). Picker-uppable by partners."""
+    rows = alert_store.list_alerts(limit=limit, db_path=REPORTS_DB_PATH)
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r.get("alert_id") or r["id"],
+                "timestamp": r["timestamp"],
+                "ward": r.get("ward"),
+                "severity": r.get("severity"),
+                "channel": r.get("channel", "sms"),
+                "status": r["status"],
+                "message": r["message"],
+            }
+        )
+    return {
+        "title": "Nairobi Flood Guard Live Alerts",
+        "sender": "Nairobi Flood Guard (complements KMD & Kenya Red Cross)",
+        "updated": items[0]["timestamp"] if items else None,
+        "alerts": items,
+    }
+
+
+@app.get("/alerts/feed/rss")
+def alerts_feed_rss(limit: int = Query(default=50, ge=1, le=200)) -> Response:
+    """RSS 2.0 wrapper around the JSON alert feed."""
+    payload = alerts_feed(limit=limit)
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<rss version=\"2.0\">",
+        "<channel>",
+        f"<title>{payload['title']}</title>",
+        f"<description>{payload['sender']}</description>",
+    ]
+    for item in payload["alerts"]:
+        lines.extend(
+            [
+                "<item>",
+                f"<title>{item.get('ward') or 'Flood alert'} [{item.get('severity', '')}]</title>",
+                f"<pubDate>{item['timestamp']}</pubDate>",
+                f"<description>{item['message']}</description>",
+                "</item>",
+            ]
+        )
+    lines.extend(["</channel>", "</rss>"])
+    return Response(
+        content="\n".join(lines), media_type="application/rss+xml; charset=utf-8"
+    )
+
+
+@app.get("/alerts/cap/feed")
+def alerts_cap_feed(limit: int = Query(default=20, ge=1, le=100)) -> Response:
+    """CAP 1.2 XML feed of recent sent alerts."""
+    from Utils.alerts import Alert, Certainty, Severity, Urgency
+
+    rows = [
+        r
+        for r in alert_store.list_alerts(limit=limit, db_path=REPORTS_DB_PATH)
+        if r["status"] == "sent"
+    ]
+    if not rows:
+        empty = Alert(
+            description_en="No active alerts.",
+            instruction_en="Monitor KMD official advisories.",
+            severity=Severity.MINOR,
+            urgency=Urgency.PAST,
+            certainty=Certainty.UNLIKELY,
+        )
+        return Response(content=empty.to_cap_xml(), media_type="application/xml")
+
+    # Bundle as CAP feed (concatenated alerts - common for simple feeds)
+    alerts_xml = []
+    for r in rows:
+        alert = Alert(
+            ward=r.get("ward") or "",
+            description_en=r["message"],
+            instruction_en="Follow local authority guidance.",
+            severity=Severity(r["severity"]) if r.get("severity") else Severity.MODERATE,
+            identifier=str(r.get("alert_id") or r["id"]),
+        )
+        alerts_xml.append(alert.to_cap_xml())
+    body = "\n".join(alerts_xml)
+    return Response(content=body, media_type="application/xml")

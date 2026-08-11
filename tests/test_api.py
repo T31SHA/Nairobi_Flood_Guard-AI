@@ -159,8 +159,38 @@ def test_alerts_audit_log_masks_phones(client):
     alert_store.log_alert(
         "Kibera", "+254712345678", "FLOOD ALERT: ...", "sent",
         db_path=api_main.REPORTS_DB_PATH,
+        severity="Severe",
+        alert_id="test-alert-1",
     )
     body = client.get("/alerts").json()
     assert body["n"] == 1
     assert body["alerts"][0]["phone"] == "+254****5678"
     assert body["alerts"][0]["ward"] == "Kibera"
+
+
+def test_alerts_public_feed(client):
+    from Utils import alert_store
+
+    alert_store.log_alert(
+        "Ruai Ward", None, "FLOOD ALERT: Ruai", "sent",
+        db_path=api_main.REPORTS_DB_PATH, severity="Severe",
+    )
+    body = client.get("/alerts/feed").json()
+    assert "alerts" in body
+    assert body["alerts"][0]["ward"] == "Ruai Ward"
+
+    rss = client.get("/alerts/feed/rss")
+    assert rss.status_code == 200
+    assert "rss" in rss.text.lower()
+
+    cap = client.get("/alerts/cap/feed")
+    assert cap.status_code == 200
+    assert "<alert" in cap.text
+
+
+def test_subscriber_language(client):
+    resp = client.post(
+        "/subscribers",
+        json={"phone": "+254799999999", "ward_or_county": "Ruai", "language": "sw"},
+    )
+    assert resp.status_code == 201

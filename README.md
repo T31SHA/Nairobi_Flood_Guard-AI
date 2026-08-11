@@ -359,7 +359,7 @@ docker compose up  # or fully containerized: API on :8000, app on :8501
 streamlit run app.py    # or: make app
 ```
 
-`app.py` is a thin router; pages live in `app_pages/` (Dashboard, Ward Lookup, Route Optimization, Alert History, Model Card, AI Assistant) and shared code in `app_lib/`. The sidebar switches rainfall between historical CHIRPS, live Open-Meteo, and 24/48hr forecast modes, hosts the SMS alert opt-in form, and includes a clearly-labeled **Simulate Scenario** control that forces one ward's risk in memory so the map, metrics and rerouting visibly react.
+`app.py` is a thin router; pages live in `app_pages/` (Dashboard, Ward Lookup, Route Optimization, Live Alerts, Alert History, Model Card, AI Assistant) and shared code in `app_lib/`. The sidebar switches rainfall between historical CHIRPS, live Open-Meteo, and 24/48hr forecast modes, hosts the SMS alert opt-in form, and includes a clearly-labeled **Simulate Scenario** control that forces one ward's risk in memory so the map, metrics and rerouting visibly react.
 
 ### REST API
 
@@ -377,8 +377,11 @@ uvicorn api.main:app --host 0.0.0.0 --port $PORT
 | `GET /reroutes?preference=balanced` | Pareto rerouting (precomputed cache or on demand) |
 | `GET /reroutes/gtfs-rt` | The same option set as a GTFS-Realtime v2.0 protobuf feed - immediately consumable by existing transit infrastructure |
 | `POST /reports` / `POST /reports/sms` | Flood report intake (JSON / Africa's Talking webhook) |
-| `POST /subscribers` / `DELETE /subscribers` | Opt a phone number into SMS alerts for a ward or county |
+| `POST /subscribers` / `DELETE /subscribers` | Opt a phone number into SMS/WhatsApp alerts for a ward or county (EN/Swahili) |
 | `GET /alerts` | The alert audit log (recipient numbers masked) |
+| `GET /alerts/feed` | Public JSON alert feed |
+| `GET /alerts/feed/rss` | RSS 2.0 alert feed |
+| `GET /alerts/cap/feed` | CAP 1.2 XML alert feed (complements KMD; does not replace) |
 
 Field reports accumulate in SQLite as **candidate labels for retraining** - point `REPORTS_DB_PATH` at persistent storage in production. The app's Alert History page surfaces both the alert audit trail and recent field reports.
 
@@ -408,7 +411,7 @@ The suite covers leakage regressions in feature engineering (label-invariance te
 8. NEXT STEPS
 </h2>
 
-Shipped since the original submission: the GTFS-RT feed is served live at `/reroutes/gtfs-rt` (no longer notebook-only); SMS early warning is autonomous (threshold-crossing alerts with idempotent de-dup, subscriber opt-in, and a visible audit trail); `make demo` / `docker compose up` prove the "no new infrastructure" claim; a data-asset preflight guards the Git LFS road network. See `JUDGE_BRIEF.md` for the full list.
+Shipped since the original submission: the GTFS-RT feed is served live at `/reroutes/gtfs-rt` (no longer notebook-only); SMS early warning is autonomous (threshold-crossing alerts with idempotent de-dup, subscriber opt-in, and a visible audit trail); `make demo` / `docker compose up` prove the "no new infrastructure" claim; a data-asset preflight guards the Git LFS road network. The EW4All upgrade adds CAP-aligned alerts (`/alerts/cap/feed`, `/alerts/feed`), multilingual EN/Swahili messaging, KMD complementarity panel, March 2026 out-of-time validation, pending-alert retry queue, and `RESPONSE_PROTOCOL.md`. See `JUDGE_BRIEF.md` for the full list.
 
 Still open:
 
